@@ -18,9 +18,12 @@ import app.ripple.mesh.data.MessageEntity
 import app.ripple.mesh.data.PeerEntity
 import app.ripple.mesh.data.RippleDatabase
 import app.ripple.mesh.data.SosBeaconEntity
+import app.ripple.mesh.data.repository.MeshRepository
 import app.ripple.mesh.service.LinkInfo
 import app.ripple.mesh.service.MeshService
 import app.ripple.mesh.service.MeshStatus
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,8 +35,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MeshViewModel(app: Application) : AndroidViewModel(app) {
-    private val db = RippleDatabase.get(app)
+@HiltViewModel
+class MeshViewModel @Inject constructor(
+    private val repository: MeshRepository,
+    app: Application,
+) : AndroidViewModel(app) {
     private val service = MutableStateFlow<MeshService?>(null)
 
     val status: StateFlow<MeshStatus> = service.flatMapLatest { it?.status ?: flowOf(MeshStatus()) }
@@ -55,18 +61,18 @@ class MeshViewModel(app: Application) : AndroidViewModel(app) {
     val displayName: StateFlow<String?> = IdentityStore.displayName(app)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val conversations: StateFlow<List<ConversationSummary>> = db.messages().observeConversations()
+    val conversations: StateFlow<List<ConversationSummary>> = repository.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val peers: StateFlow<List<PeerEntity>> = db.peers().observeAll()
+    val peers: StateFlow<List<PeerEntity>> = repository.observePeers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Received SOS beacon history (persisted in Room, pruned to ~90 days). */
-    val sosBeacons: StateFlow<List<SosBeaconEntity>> = db.sos().observeAll()
+    val sosBeacons: StateFlow<List<SosBeaconEntity>> = repository.observeSosBeacons()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun messages(conversation: String): Flow<List<MessageEntity>> = db.messages().observeConversation(conversation)
-    fun peer(nodeIdHex: String): Flow<PeerEntity?> = db.peers().observe(nodeIdHex)
+    fun messages(conversation: String): Flow<List<MessageEntity>> = repository.observeMessages(conversation)
+    fun peer(nodeIdHex: String): Flow<PeerEntity?> = repository.observePeer(nodeIdHex)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) { service.value = (binder as MeshService.LocalBinder).service }
@@ -81,7 +87,7 @@ class MeshViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setVisibleConversation(c: String?) {
         service.value?.visibleConversation = c
-        if (c != null) viewModelScope.launch { db.messages().markRead(c) }
+        if (c != null) viewModelScope.launch { repository.markRead(c) }
     }
 
     fun send(conversation: String, text: String) = viewModelScope.launch {

@@ -3,8 +3,10 @@ package app.ripple.mesh
 import android.app.Application
 import android.os.Process
 import app.ripple.mesh.core.EventLog
+import dagger.hilt.android.HiltAndroidApp
 import kotlin.system.exitProcess
 
+@HiltAndroidApp
 class RippleApp : Application() {
     override fun onCreate() {
         super.onCreate()

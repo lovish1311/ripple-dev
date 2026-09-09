@@ -3,6 +3,8 @@ package app.ripple.mesh.ui
 import androidx.lifecycle.ViewModel
 import app.ripple.mesh.fieldtest.FieldTestResult
 import app.ripple.mesh.fieldtest.FieldTestSession
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -12,7 +14,8 @@ import kotlinx.coroutines.flow.update
  * it has no dependency on the mesh service or Room — a session is just an
  * immutable in-memory record of verdicts and notes, resettable at any time.
  */
-class FieldTestViewModel : ViewModel() {
+@HiltViewModel
+class FieldTestViewModel @Inject constructor() : ViewModel() {
     private val _session = MutableStateFlow(FieldTestSession())
     val session: StateFlow<FieldTestSession> = _session
 

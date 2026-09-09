@@ -47,7 +47,9 @@ import app.ripple.mesh.ui.screens.PairScreen
 import app.ripple.mesh.ui.screens.PowerScreen
 import app.ripple.mesh.ui.screens.SettingsScreen
 import app.ripple.mesh.ui.screens.SosScreen
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val vm: MeshViewModel by viewModels()
     private val fieldTestVm: FieldTestViewModel by viewModels()

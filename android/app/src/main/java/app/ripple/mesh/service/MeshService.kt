@@ -45,7 +45,10 @@ import app.ripple.mesh.data.PeerEntity
 import app.ripple.mesh.data.RelayPacketEntity
 import app.ripple.mesh.data.RippleDatabase
 import app.ripple.mesh.data.SosBeaconEntity
+import app.ripple.mesh.data.repository.MeshRepository
 import app.ripple.mesh.ui.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
+import jakarta.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,6 +88,7 @@ data class LinkInfo(
  * lifetime of the app. The UI binds to it to send messages; all inbound traffic
  * is persisted to Room and surfaced via Flows.
  */
+@AndroidEntryPoint
 class MeshService : LifecycleService(), RouterListener {
     companion object {
         private const val TAG = "MeshService"
@@ -103,7 +107,9 @@ class MeshService : LifecycleService(), RouterListener {
     private val binder = LocalBinder()
 
     lateinit var router: MeshRouter; private set
-    private lateinit var db: RippleDatabase
+    @Inject
+    lateinit var db: RippleDatabase
+    @Inject lateinit var repository: MeshRepository
     private var central: BleCentral? = null
     private var peripheral: BlePeripheral? = null
     private var loopback: Loopback? = null
@@ -131,7 +137,6 @@ class MeshService : LifecycleService(), RouterListener {
 
     override fun onCreate() {
         super.onCreate()
-        db = RippleDatabase.get(this)
         createChannels()
         startForegroundCompat()
 
