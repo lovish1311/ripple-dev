@@ -40,6 +40,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +77,10 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
 
     Scaffold(topBar = {
         TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                titleContentColor = MaterialTheme.colorScheme.onSurface
+            ),
             title = {
                 Column {
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)

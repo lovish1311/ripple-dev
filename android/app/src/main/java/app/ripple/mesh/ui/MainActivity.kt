@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ripple.mesh.R
 import app.ripple.mesh.ui.screens.AppearanceScreen
 import app.ripple.mesh.ui.screens.BackupScreen
+import app.ripple.mesh.ui.theme.AppTheme
 import app.ripple.mesh.ui.screens.ChatScreen
 import app.ripple.mesh.ui.screens.DiagnosticsScreen
 import app.ripple.mesh.ui.screens.FieldTestScreen
@@ -144,13 +145,83 @@ private fun PermissionGate(onRequest: () -> Unit) {
 @Composable
 fun RippleTheme(vm: MeshViewModel, content: @Composable () -> Unit) {
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val appTheme = AppTheme.fromId(themeMode)
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val dark = when (themeMode) {
-        "light" -> false
-        "dark" -> true
-        else -> systemDark
+    val dark = if (appTheme == AppTheme.SYSTEM) systemDark else appTheme.isDark
+
+    val scheme = if (appTheme == AppTheme.SYSTEM || appTheme == AppTheme.LIGHT || appTheme == AppTheme.DARK) {
+        if (dark) darkColorScheme(
+            primary = Color(0xFF7FDBCA),
+            secondary = Color(0xFF9CC5FF),
+            tertiary = Color(0xFFFFB59D),
+            background = Color(0xFF121212),
+            surface = Color(0xFF1E1E1E),
+            surfaceVariant = Color(0xFF252525),
+            surfaceContainerLow = Color(0xFF181818),
+            surfaceContainer = Color(0xFF1E1E1E),
+            surfaceContainerHigh = Color(0xFF282828),
+            surfaceContainerHighest = Color(0xFF333333),
+            onBackground = Color(0xFFF8FAFC),
+            onSurface = Color(0xFFF8FAFC),
+            onSurfaceVariant = Color(0xFF94A3B8)
+        )
+        else lightColorScheme(
+            primary = Color(0xFF006B5E),
+            secondary = Color(0xFF3B5E8C),
+            tertiary = Color(0xFF9C4325),
+            background = Color(0xFFF8F9FA),
+            surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFF1F3F5),
+            surfaceContainerLow = Color(0xFFF8F9FA),
+            surfaceContainer = Color(0xFFF1F3F5),
+            surfaceContainerHigh = Color(0xFFE9ECEF),
+            surfaceContainerHighest = Color(0xFFDEE2E6),
+            onBackground = Color(0xFF0F172A),
+            onSurface = Color(0xFF0F172A),
+            onSurfaceVariant = Color(0xFF475569)
+        )
+    } else {
+        if (dark) darkColorScheme(
+            primary = appTheme.primaryColor,
+            onPrimary = Color.White,
+            primaryContainer = appTheme.primaryColor,
+            onPrimaryContainer = Color.White,
+            secondary = appTheme.secondaryColor,
+            onSecondary = Color.White,
+            secondaryContainer = appTheme.secondaryColor,
+            onSecondaryContainer = Color.White,
+            background = appTheme.backgroundColor,
+            surface = appTheme.surfaceColor,
+            surfaceVariant = appTheme.cardColor,
+            surfaceContainerLow = appTheme.backgroundColor,
+            surfaceContainer = appTheme.surfaceColor,
+            surfaceContainerHigh = appTheme.cardColor,
+            surfaceContainerHighest = appTheme.cardColor,
+            onBackground = appTheme.textColor,
+            onSurface = appTheme.textColor,
+            onSurfaceVariant = Color(0xFF94A3B8)
+        )
+        else lightColorScheme(
+            primary = appTheme.primaryColor,
+            onPrimary = Color.White,
+            primaryContainer = appTheme.primaryColor,
+            onPrimaryContainer = Color.White,
+            secondary = appTheme.secondaryColor,
+            onSecondary = Color.White,
+            secondaryContainer = appTheme.secondaryColor,
+            onSecondaryContainer = Color.White,
+            background = appTheme.backgroundColor,
+            surface = appTheme.surfaceColor,
+            surfaceVariant = appTheme.cardColor,
+            surfaceContainerLow = appTheme.backgroundColor,
+            surfaceContainer = appTheme.surfaceColor,
+            surfaceContainerHigh = appTheme.cardColor,
+            surfaceContainerHighest = appTheme.cardColor,
+            onBackground = appTheme.textColor,
+            onSurface = appTheme.textColor,
+            onSurfaceVariant = Color(0xFF475569)
+        )
     }
-    val scheme = if (dark) darkColorScheme(primary = Color(0xFF7FDBCA), secondary = Color(0xFF9CC5FF), tertiary = Color(0xFFFFB59D))
-    else lightColorScheme(primary = Color(0xFF006B5E), secondary = Color(0xFF3B5E8C), tertiary = Color(0xFF9C4325))
+
     MaterialTheme(colorScheme = scheme, content = content)
 }

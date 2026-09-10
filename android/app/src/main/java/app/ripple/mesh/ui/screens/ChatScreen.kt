@@ -1,5 +1,11 @@
 package app.ripple.mesh.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,12 +14,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,9 +36,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +86,10 @@ fun ChatScreen(vm: MeshViewModel, conversation: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) } },
                 title = {
                     Column {
@@ -83,6 +99,7 @@ fun ChatScreen(vm: MeshViewModel, conversation: String, onBack: () -> Unit) {
                             Text(
                                 if (isBroadcast) stringResource(R.string.broadcast_subtitle) else stringResource(R.string.direct_subtitle),
                                 style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -90,15 +107,68 @@ fun ChatScreen(vm: MeshViewModel, conversation: String, onBack: () -> Unit) {
             )
         },
         bottomBar = {
-            Row(Modifier.fillMaxWidth().imePadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(R.string.message_hint)) }, maxLines = 4,
-                )
-                IconButton(
-                    enabled = draft.isNotBlank(),
-                    onClick = { vm.send(conversation, draft.trim()); draft = "" },
-                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send)) }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
+                tonalElevation = 6.dp,
+                shadowElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.message_hint),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        },
+                        maxLines = 5,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    IconButton(
+                        enabled = draft.isNotBlank(),
+                        onClick = {
+                            vm.send(conversation, draft.trim())
+                            draft = ""
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(
+                                if (draft.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = stringResource(R.string.send),
+                            tint = if (draft.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         },
     ) { padding ->
@@ -112,6 +182,7 @@ fun ChatScreen(vm: MeshViewModel, conversation: String, onBack: () -> Unit) {
 private fun MessageBubble(m: MessageEntity, showSender: Boolean) {
     val mine = m.outgoing
     val bg = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
     val sender = if (showSender && !mine) m.fromName ?: NodeId.fromHex(m.fromNodeId).display else null
     val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.timestamp))
     val statusWord = if (mine) when (m.status) {
@@ -136,9 +207,13 @@ private fun MessageBubble(m: MessageEntity, showSender: Boolean) {
             if (showSender && !mine) {
                 Text(m.fromName ?: NodeId.fromHex(m.fromNodeId).display, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            Text(m.text, style = MaterialTheme.typography.bodyLarge)
+            Text(m.text, style = MaterialTheme.typography.bodyLarge, color = textColor)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.timestamp)), style = MaterialTheme.typography.labelSmall)
+                Text(
+                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.timestamp)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textColor.copy(alpha = 0.8f)
+                )
                 if (mine) {
                     DeliveryStatusIcon(status = m.status)
                 } else if (!m.verified) {
