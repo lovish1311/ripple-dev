@@ -70,6 +70,22 @@ class MeshViewModel @Inject constructor(
         IdentityStore.setThemeMode(getApplication(), mode)
     }
 
+    val fontFamily: StateFlow<String> = IdentityStore.fontFamily(app)
+        .map { it ?: "system" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
+
+    fun setFontFamily(family: String) = viewModelScope.launch {
+        IdentityStore.setFontFamily(getApplication(), family)
+    }
+
+    val fontScale: StateFlow<Float> = IdentityStore.fontScale(app)
+        .map { it ?: 1.0f }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 1.0f)
+
+    fun setFontScale(scale: Float) = viewModelScope.launch {
+        IdentityStore.setFontScale(getApplication(), scale)
+    }
+
     val conversations: StateFlow<List<ConversationSummary>> = repository.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

@@ -69,6 +69,8 @@ object IdentityStore {
     private val NAME = stringPreferencesKey("display_name")
     private val POWER_PROFILE = intPreferencesKey("power_profile")
     private val THEME_MODE = stringPreferencesKey("theme_mode")
+    private val FONT_FAMILY = stringPreferencesKey("font_family")
+    private val FONT_SCALE = androidx.datastore.preferences.core.floatPreferencesKey("font_scale")
 
     fun load(context: Context): Identity {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -223,6 +225,18 @@ object IdentityStore {
 
     suspend fun setThemeMode(context: Context, mode: String) {
         context.settings.edit { it[THEME_MODE] = mode }
+    }
+
+    fun fontFamily(context: Context): Flow<String?> = context.settings.data.map { it[FONT_FAMILY] }
+
+    suspend fun setFontFamily(context: Context, family: String) {
+        context.settings.edit { it[FONT_FAMILY] = family }
+    }
+
+    fun fontScale(context: Context): Flow<Float?> = context.settings.data.map { it[FONT_SCALE] }
+
+    suspend fun setFontScale(context: Context, scale: Float) {
+        context.settings.edit { it[FONT_SCALE] = scale }
     }
 
     private fun b64encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)

@@ -145,9 +145,41 @@ private fun PermissionGate(onRequest: () -> Unit) {
 @Composable
 fun RippleTheme(vm: MeshViewModel, content: @Composable () -> Unit) {
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val fontFamilyId by vm.fontFamily.collectAsStateWithLifecycle()
+    val fontScaleValue by vm.fontScale.collectAsStateWithLifecycle()
+
     val appTheme = AppTheme.fromId(themeMode)
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
     val dark = if (appTheme == AppTheme.SYSTEM) systemDark else appTheme.isDark
+
+    val fontFamily = when (fontFamilyId) {
+        "chiller" -> androidx.compose.ui.text.font.FontFamily.Cursive
+        "monospace" -> androidx.compose.ui.text.font.FontFamily.Monospace
+        "serif" -> androidx.compose.ui.text.font.FontFamily.Serif
+        "sans_serif" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+        else -> androidx.compose.ui.text.font.FontFamily.Default
+    }
+
+    val customTypography = remember(fontFamily, fontScaleValue) {
+        val base = androidx.compose.material3.Typography()
+        androidx.compose.material3.Typography(
+            displayLarge = base.displayLarge.copy(fontFamily = fontFamily, fontSize = base.displayLarge.fontSize * fontScaleValue),
+            displayMedium = base.displayMedium.copy(fontFamily = fontFamily, fontSize = base.displayMedium.fontSize * fontScaleValue),
+            displaySmall = base.displaySmall.copy(fontFamily = fontFamily, fontSize = base.displaySmall.fontSize * fontScaleValue),
+            headlineLarge = base.headlineLarge.copy(fontFamily = fontFamily, fontSize = base.headlineLarge.fontSize * fontScaleValue),
+            headlineMedium = base.headlineMedium.copy(fontFamily = fontFamily, fontSize = base.headlineMedium.fontSize * fontScaleValue),
+            headlineSmall = base.headlineSmall.copy(fontFamily = fontFamily, fontSize = base.headlineSmall.fontSize * fontScaleValue),
+            titleLarge = base.titleLarge.copy(fontFamily = fontFamily, fontSize = base.titleLarge.fontSize * fontScaleValue),
+            titleMedium = base.titleMedium.copy(fontFamily = fontFamily, fontSize = base.titleMedium.fontSize * fontScaleValue),
+            titleSmall = base.titleSmall.copy(fontFamily = fontFamily, fontSize = base.titleSmall.fontSize * fontScaleValue),
+            bodyLarge = base.bodyLarge.copy(fontFamily = fontFamily, fontSize = base.bodyLarge.fontSize * fontScaleValue),
+            bodyMedium = base.bodyMedium.copy(fontFamily = fontFamily, fontSize = base.bodyMedium.fontSize * fontScaleValue),
+            bodySmall = base.bodySmall.copy(fontFamily = fontFamily, fontSize = base.bodySmall.fontSize * fontScaleValue),
+            labelLarge = base.labelLarge.copy(fontFamily = fontFamily, fontSize = base.labelLarge.fontSize * fontScaleValue),
+            labelMedium = base.labelMedium.copy(fontFamily = fontFamily, fontSize = base.labelMedium.fontSize * fontScaleValue),
+            labelSmall = base.labelSmall.copy(fontFamily = fontFamily, fontSize = base.labelSmall.fontSize * fontScaleValue),
+        )
+    }
 
     val scheme = if (appTheme == AppTheme.SYSTEM || appTheme == AppTheme.LIGHT || appTheme == AppTheme.DARK) {
         if (dark) darkColorScheme(
@@ -223,5 +255,5 @@ fun RippleTheme(vm: MeshViewModel, content: @Composable () -> Unit) {
         )
     }
 
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = customTypography, content = content)
 }
