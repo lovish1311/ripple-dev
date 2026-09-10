@@ -68,6 +68,7 @@ object IdentityStore {
 
     private val NAME = stringPreferencesKey("display_name")
     private val POWER_PROFILE = intPreferencesKey("power_profile")
+    private val THEME_MODE = stringPreferencesKey("theme_mode")
 
     fun load(context: Context): Identity {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -216,6 +217,12 @@ object IdentityStore {
 
     suspend fun setPowerProfile(context: Context, code: Int) {
         context.settings.edit { it[POWER_PROFILE] = code }
+    }
+
+    fun themeMode(context: Context): Flow<String?> = context.settings.data.map { it[THEME_MODE] }
+
+    suspend fun setThemeMode(context: Context, mode: String) {
+        context.settings.edit { it[THEME_MODE] = mode }
     }
 
     private fun b64encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)

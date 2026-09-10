@@ -33,6 +33,11 @@
     <string name="status_sent">Sent</string>
     <string name="status_delivered">Delivered</string>
     <string name="status_failed">Failed</string>
+    <string name="status_sent_icon">Single checkmark sent</string>
+    <string name="status_delivered_icon">Double checkmark delivered</string>
+    <string name="status_read_icon">Double blue checkmark read</string>
+    <string name="status_failed_icon">Failed to send</string>
+    <string name="status_pending_icon">Pending message sending</string>
     <string name="peer_online_desc">Online</string>
     <string name="peer_offline_desc">Offline</string>
     <plurals name="unread_badge">
@@ -61,6 +66,16 @@
     <string name="loopback_hint">Adds two fake peers (Asha, Ravi) so you can try the app with one phone. Ravi is two hops away and wanders out of range.</string>
     <string name="peers_empty_cta">Only one phone? Try the simulated neighbourhood in Settings → Diagnostics</string>
     <string name="about_blurb">Ripple never uses the internet. Messages hop phone-to-phone over Bluetooth LE, are signed by the sender, and direct messages are end-to-end encrypted. Messages for peers who are out of range are held and delivered when the mesh reconnects.</string>
+
+    <string name="appearance">Appearance &amp; visual</string>
+    <string name="appearance_subtitle">Customize theme and typography</string>
+    <string name="theme_setting">Theme</string>
+    <string name="theme_system">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="font_setting">Font &amp; typography</string>
+    <string name="font_family_placeholder">Font Family (Default)</string>
+    <string name="font_size_placeholder">Text Size (Normal)</string>
 
     <string name="field_test">Field test</string>
     <string name="field_test_subtitle">Guided real-device checklist with an export ready for the field-test issue template</string>

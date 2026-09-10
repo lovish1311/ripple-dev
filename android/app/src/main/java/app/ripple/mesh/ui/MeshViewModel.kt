@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -60,6 +61,14 @@ class MeshViewModel @Inject constructor(
 
     val displayName: StateFlow<String?> = IdentityStore.displayName(app)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val themeMode: StateFlow<String> = IdentityStore.themeMode(app)
+        .map { it ?: "system" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
+
+    fun setThemeMode(mode: String) = viewModelScope.launch {
+        IdentityStore.setThemeMode(getApplication(), mode)
+    }
 
     val conversations: StateFlow<List<ConversationSummary>> = repository.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -44,6 +46,7 @@ fun SettingsScreen(
     onOpenFieldTest: () -> Unit = {},
     onOpenPair: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenAppearance: () -> Unit = {},
 ) {
     val selfId by vm.selfId.collectAsStateWithLifecycle()
     val savedName by vm.displayName.collectAsStateWithLifecycle()
@@ -57,7 +60,10 @@ fun SettingsScreen(
             title = { Text(stringResource(R.string.settings)) },
         )
     }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             Text(stringResource(R.string.your_identity), style = MaterialTheme.typography.titleMedium)
             Text(selfId?.display ?: "…", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyLarge)
             Text(stringResource(R.string.identity_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -87,6 +93,8 @@ fun SettingsScreen(
             Text(stringResource(R.string.pair_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = onOpenBackup, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_title)) }
             Text(stringResource(R.string.backup_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onOpenAppearance, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.appearance)) }
+            Text(stringResource(R.string.appearance_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(R.string.about_blurb), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

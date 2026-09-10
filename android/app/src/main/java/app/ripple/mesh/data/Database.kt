@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -14,13 +15,19 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-enum class MessageStatus { PENDING, SENT, DELIVERED, RECEIVED, FAILED }
+enum class MessageStatus { PENDING, SENT, DELIVERED, READ, RECEIVED, FAILED }
 
 /**
  * One chat message. `conversation` is "broadcast" for the public channel, or the
  * hex NodeId of the other party for a direct conversation.
  */
-@Entity(tableName = "messages")
+@Entity(
+    tableName = "messages",
+    indices = [
+        Index(value = ["conversation", "timestamp"]),
+        Index(value = ["status"])
+    ]
+)
 data class MessageEntity(
     @PrimaryKey val messageId: String,          // hex
     val conversation: String,
@@ -86,7 +93,7 @@ interface MessageDao {
     )
     fun observeConversations(): Flow<List<ConversationSummary>>
 
-    @Query("UPDATE messages SET status = 'DELIVERED' WHERE conversation = :conversation AND outgoing = 0 AND status = 'RECEIVED'")
+    @Query("UPDATE messages SET status = 'READ' WHERE conversation = :conversation AND outgoing = 0 AND status = 'RECEIVED'")
     suspend fun markRead(conversation: String)
 
     @Query("SELECT COUNT(*) FROM messages WHERE status = 'RECEIVED' AND outgoing = 0")
@@ -154,7 +161,15 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 2, exportSchema = false)
+/** v2 → v3: add composite indexes on messages(conversation, timestamp) and messages(status). */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_conversation_timestamp` ON `messages` (`conversation`, `timestamp`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_status` ON `messages` (`status`)")
+    }
+}
+
+@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 3, exportSchema = false)
 abstract class RippleDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
     abstract fun peers(): PeerDao
@@ -168,7 +183,7 @@ abstract class RippleDatabase : RoomDatabase() {
         @Volatile private var instance: RippleDatabase? = null
         fun get(context: Context): RippleDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, RippleDatabase::class.java, "ripple.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigration().build().also { instance = it }
         }
     }

@@ -37,7 +37,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ripple.mesh.R
+import app.ripple.mesh.ui.screens.AppearanceScreen
 import app.ripple.mesh.ui.screens.BackupScreen
 import app.ripple.mesh.ui.screens.ChatScreen
 import app.ripple.mesh.ui.screens.DiagnosticsScreen
@@ -58,7 +60,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         launchIntent = intent
-        setContent { RippleTheme { RippleRoot(vm, fieldTestVm, launchIntent) } }
+        setContent { RippleTheme(vm) { RippleRoot(vm, fieldTestVm, launchIntent) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -117,10 +119,12 @@ fun RippleRoot(vm: MeshViewModel, fieldTestVm: FieldTestViewModel, launchIntent:
                 onOpenFieldTest = { nav.navigate("fieldtest") },
                 onOpenPair = { nav.navigate("pair") },
                 onOpenBackup = { nav.navigate("backup") },
+                onOpenAppearance = { nav.navigate("appearance") },
             )
         }
         composable("pair") { PairScreen(vm, onBack = { nav.popBackStack() }) }
         composable("backup") { BackupScreen(vm, onBack = { nav.popBackStack() }) }
+        composable("appearance") { AppearanceScreen(vm, onBack = { nav.popBackStack() }) }
         composable("sos") { SosScreen(vm, onBack = { nav.popBackStack() }) }
         composable("power") { PowerScreen(vm, onBack = { nav.popBackStack() }) }
         composable("diagnostics") { DiagnosticsScreen(vm, onBack = { nav.popBackStack() }) }
@@ -138,8 +142,14 @@ private fun PermissionGate(onRequest: () -> Unit) {
 }
 
 @Composable
-fun RippleTheme(content: @Composable () -> Unit) {
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+fun RippleTheme(vm: MeshViewModel, content: @Composable () -> Unit) {
+    val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
     val scheme = if (dark) darkColorScheme(primary = Color(0xFF7FDBCA), secondary = Color(0xFF9CC5FF), tertiary = Color(0xFFFFB59D))
     else lightColorScheme(primary = Color(0xFF006B5E), secondary = Color(0xFF3B5E8C), tertiary = Color(0xFF9C4325))
     MaterialTheme(colorScheme = scheme, content = content)

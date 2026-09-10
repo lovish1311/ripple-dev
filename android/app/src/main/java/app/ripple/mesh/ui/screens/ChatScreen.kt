@@ -18,6 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -115,6 +120,7 @@ private fun MessageBubble(m: MessageEntity, showSender: Boolean) {
         MessageStatus.DELIVERED -> stringResource(R.string.status_delivered)
         MessageStatus.FAILED -> stringResource(R.string.status_failed)
         MessageStatus.RECEIVED -> null
+        MessageStatus.READ -> stringResource(R.string.status_delivered)
     } else null
     val verification = if (!mine && !m.verified) stringResource(R.string.unverified) else null
     // Compute localized strings before entering the non-composable semantics lambda.
@@ -131,20 +137,51 @@ private fun MessageBubble(m: MessageEntity, showSender: Boolean) {
                 Text(m.fromName ?: NodeId.fromHex(m.fromNodeId).display, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             Text(m.text, style = MaterialTheme.typography.bodyLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.align(Alignment.End)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.timestamp)), style = MaterialTheme.typography.labelSmall)
-                if (mine) Text(
-                    when (m.status) {
-                        MessageStatus.PENDING -> "🕓"
-                        MessageStatus.SENT -> "✓"
-                        MessageStatus.DELIVERED -> "✓✓"
-                        MessageStatus.FAILED -> "!"
-                        MessageStatus.RECEIVED -> ""
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (m.status == MessageStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                ) else if (!m.verified) Text(stringResource(R.string.unverified), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                if (mine) {
+                    DeliveryStatusIcon(status = m.status)
+                } else if (!m.verified) {
+                    Text(stringResource(R.string.unverified), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun DeliveryStatusIcon(status: MessageStatus, isRead: Boolean = false) {
+    when (status) {
+        MessageStatus.PENDING -> Icon(
+            imageVector = Icons.Default.AccessTime,
+            contentDescription = stringResource(R.string.status_pending_icon),
+            modifier = Modifier.size(14.dp),
+            tint = colorResource(R.color.status_pending)
+        )
+        MessageStatus.SENT -> Icon(
+            imageVector = Icons.Default.Check,
+            contentDescription = stringResource(R.string.status_sent_icon),
+            modifier = Modifier.size(14.dp),
+            tint = colorResource(R.color.status_sent)
+        )
+        MessageStatus.DELIVERED -> Icon(
+            imageVector = Icons.Default.DoneAll,
+            contentDescription = stringResource(R.string.status_delivered_icon),
+            modifier = Modifier.size(16.dp),
+            tint = colorResource(R.color.status_delivered)
+        )
+        MessageStatus.READ -> Icon(
+            imageVector = Icons.Default.DoneAll,
+            contentDescription = stringResource(R.string.status_read_icon),
+            modifier = Modifier.size(16.dp),
+            tint = colorResource(R.color.status_read)
+        )
+        MessageStatus.FAILED -> Icon(
+            imageVector = Icons.Default.ErrorOutline,
+            contentDescription = stringResource(R.string.status_failed_icon),
+            modifier = Modifier.size(14.dp),
+            tint = colorResource(R.color.status_failed)
+        )
+        MessageStatus.RECEIVED -> { /* No status icon for incoming messages */ }
     }
 }
