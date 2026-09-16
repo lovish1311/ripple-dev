@@ -21,6 +21,7 @@ data class Peer(
     val lastSeen: Long,
     /** Best known hop distance (1 = direct neighbour). */
     val hops: Int,
+    val avatar: String? = null,
 )
 
 data class InboundMessage(
@@ -28,6 +29,17 @@ data class InboundMessage(
     val from: NodeId,
     val fromName: String?,
     val text: String,
+    val isBroadcast: Boolean,
+    val verified: Boolean,
+    val timestamp: Long,
+)
+
+data class InboundVoiceMessage(
+    val messageId: ByteArray,
+    val from: NodeId,
+    val fromName: String?,
+    val voiceBytes: ByteArray,
+    val durationMs: Int,
     val isBroadcast: Boolean,
     val verified: Boolean,
     val timestamp: Long,
@@ -42,10 +54,13 @@ data class SosBeacon(
     val location: SosLocation?,
     val verified: Boolean,
     val timestamp: Long,
+    val voiceBytes: ByteArray? = null,
+    val voiceDurationMs: Int? = null,
 )
 
 interface RouterListener {
     fun onMessage(message: InboundMessage)
+    fun onVoiceMessage(message: InboundVoiceMessage) {}
     fun onAck(messageId: ByteArray, from: NodeId)
     fun onPeersChanged(peers: List<Peer>)
     fun onLinkIdentified(link: Link, peer: Peer) {}
@@ -142,8 +157,21 @@ class MeshRouter(
         return originate(PacketFactory.directText(identity, destination, peer.publicKeyWire, text))
     }
 
+    fun sendBroadcastVoice(voiceBytes: ByteArray, durationMs: Int): ByteArray =
+        originate(PacketFactory.broadcastVoice(identity, voiceBytes, durationMs))
+
+    fun sendDirectVoice(destination: NodeId, voiceBytes: ByteArray, durationMs: Int): ByteArray {
+        val peer = peer(destination) ?: throw IllegalStateException("Unknown peer ${destination.display}")
+        return originate(PacketFactory.directVoice(identity, destination, peer.publicKeyWire, voiceBytes, durationMs))
+    }
+
     /** Broadcast an SOS beacon. `location` is only sent if the operator opted in to sharing GPS. */
-    fun sendSos(text: String, location: SosLocation? = null): ByteArray = originate(PacketFactory.sos(identity, text, location))
+    fun sendSos(
+        text: String,
+        location: SosLocation? = null,
+        voiceBytes: ByteArray? = null,
+        voiceDurationMs: Int = 0
+    ): ByteArray = originate(PacketFactory.sos(identity, text, location, voiceBytes, voiceDurationMs))
 
     private fun originate(packet: Packet): ByteArray = lock.withLock {
         if (packet.type != PacketType.ACK) log.i("router", "sending ${packet.type} ${packet.messageIdHex.take(8)} on ${links.size} link(s)")
@@ -178,9 +206,8 @@ class MeshRouter(
             if (entry.expiresAt < now || peerHex in entry.deliveredTo) continue
             val dest = entry.packet.destination
             val forPeer = dest.hex == peerId.hex
-            val isBroadcast = dest.isBroadcast
-            val unknownDest = !isBroadcast && !peers.containsKey(dest.hex)
-            if (forPeer || isBroadcast || unknownDest) {
+            val peerCanRelay = dest.isBroadcast && (entry.packet.type == PacketType.SOS || batteryProfile != BatteryProfile.POWER_SAVER)
+            if (forPeer || peerCanRelay) {
                 entry.deliveredTo.add(peerHex)
                 link.send(entry.packet.encode())
                 replayed++
@@ -192,7 +219,7 @@ class MeshRouter(
     // ---- inbound ------------------------------------------------------------------
 
     fun onReceive(link: Link, bytes: ByteArray): Unit = lock.withLock {
-        val p = try { Packet.decode(bytes) } catch (_: Exception) { return }
+        val p = try { Packet.decode(bytes) } catch (e: Exception) { log.w("router", "bad packet from ${link.id}: ${e.message}"); return }
         val now = clock()
         if (p.timestamp > now + Protocol.SEEN_TTL_MS) return
         if (seen.containsKey(p.messageIdHex)) return
@@ -210,7 +237,7 @@ class MeshRouter(
             val verified = peer != null && Crypto.verify(peer.publicKey, p.encodeUnsigned(), p.signature)
             if (peer != null && !verified) return // forged beacon from a known peer
             val sos = try { SosCodec.decode(p.payload) } catch (_: Exception) { relay(p, link); return }
-            listener.onSos(SosBeacon(p.messageId, p.source, peer?.name, sos.text, sos.location, verified, p.timestamp))
+            listener.onSos(SosBeacon(p.messageId, p.source, peer?.name, sos.text, sos.location, verified, p.timestamp, sos.voiceBytes, sos.voiceDurationMs))
             relay(p, link) // beacons always flood onward
             return
         }
@@ -232,6 +259,17 @@ class MeshRouter(
                     listener.onMessage(InboundMessage(p.messageId, p.source, peer?.name, text, isBroadcast, verified, p.timestamp))
                     if (forMe) originate(PacketFactory.ack(identity, p.source, p.messageId))
                 }
+                PacketType.VOICE -> {
+                    val rawVoicePayload = if (p.isEncrypted) {
+                        try { Crypto.decrypt(identity.privateKey, p.messageId, p.source, p.destination, p.payload) }
+                        catch (_: Exception) { log.w("router", "could not decrypt voice ${p.messageIdHex.take(8)} from ${p.source.short}"); return }
+                    } else p.payload
+                    val (durationMs, voiceBytes) = try { VoiceCodec.decode(rawVoicePayload) }
+                    catch (_: Exception) { log.w("router", "malformed voice payload from ${p.source.short}"); return }
+                    log.i("router", "${if (isBroadcast) "broadcast" else "direct"} voice ${p.messageIdHex.take(8)} (${durationMs}ms) from ${peer?.name ?: p.source.short} via ${link.id} (ttl ${p.ttl})")
+                    listener.onVoiceMessage(InboundVoiceMessage(p.messageId, p.source, peer?.name, voiceBytes, durationMs, isBroadcast, verified, p.timestamp))
+                    if (forMe) originate(PacketFactory.ack(identity, p.source, p.messageId))
+                }
                 PacketType.ACK -> if (forMe && p.payload.size == Protocol.MESSAGE_ID_SIZE) listener.onAck(p.payload, p.source)
                 PacketType.ANNOUNCE -> {}
                 PacketType.SOS -> {} // handled above
@@ -247,10 +285,11 @@ class MeshRouter(
         if (!Crypto.verify(publicKey, p.encodeUnsigned(), p.signature)) return
         if (p.source.hex == selfId.hex) return
 
+        val (extractedAvatar, cleanName) = AvatarHelper.extractAvatarAndName(ann.name)
         val hops = Protocol.MAX_TTL - p.ttl + 1
         val prev = peers[p.source.hex]
         if (prev == null) log.i("router", "new peer ${ann.name} (${p.source.short}) at $hops hop(s)")
-        peers[p.source.hex] = Peer(p.source, publicKey, ann.publicKeyWire, ann.name, now, if (prev != null) minOf(prev.hops, hops) else hops)
+        peers[p.source.hex] = Peer(p.source, publicKey, ann.publicKeyWire, cleanName, now, if (prev != null) minOf(prev.hops, hops) else hops, extractedAvatar)
         listener.onPeersChanged(peers.values.toList())
 
         if (link.peerHex == null && hops == 1) {

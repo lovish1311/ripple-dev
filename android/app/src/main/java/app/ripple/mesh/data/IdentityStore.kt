@@ -67,6 +67,7 @@ object IdentityStore {
     private const val K_X509 = "x509"
 
     private val NAME = stringPreferencesKey("display_name")
+    private val AVATAR = stringPreferencesKey("user_avatar")
     private val POWER_PROFILE = intPreferencesKey("power_profile")
     private val THEME_MODE = stringPreferencesKey("theme_mode")
     private val FONT_FAMILY = stringPreferencesKey("font_family")
@@ -212,6 +213,12 @@ object IdentityStore {
 
     suspend fun setDisplayName(context: Context, name: String) {
         context.settings.edit { it[NAME] = name }
+    }
+
+    fun avatar(context: Context): Flow<String?> = context.settings.data.map { it[AVATAR] }
+
+    suspend fun setAvatar(context: Context, avatar: String) {
+        context.settings.edit { it[AVATAR] = avatar }
     }
 
     /** Battery profile persists across restarts (DataStore). */

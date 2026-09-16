@@ -27,6 +27,7 @@ import app.ripple.mesh.ble.BlePeripheral
 import app.ripple.mesh.core.BatteryProfile
 import app.ripple.mesh.core.Crypto
 import app.ripple.mesh.core.InboundMessage
+import app.ripple.mesh.core.InboundVoiceMessage
 import app.ripple.mesh.core.Link
 import app.ripple.mesh.core.MeshRouter
 import app.ripple.mesh.core.NodeId
@@ -35,6 +36,7 @@ import app.ripple.mesh.core.Peer
 import app.ripple.mesh.core.RouterListener
 import app.ripple.mesh.core.SosBeacon
 import app.ripple.mesh.core.SosLocation
+import app.ripple.mesh.core.AvatarHelper
 import app.ripple.mesh.core.EventLog
 import app.ripple.mesh.core.Loopback
 import app.ripple.mesh.core.toHex
@@ -146,7 +148,9 @@ class MeshService : LifecycleService(), RouterListener {
         eventLog.i("service", "started; node ${identity.nodeId.display}; Android ${Build.VERSION.SDK_INT}; ${Build.MANUFACTURER} ${Build.MODEL}")
 
         lifecycleScope.launch {
-            IdentityStore.displayName(this@MeshService).first()?.let { router.setDisplayName(it) }
+            val name = IdentityStore.displayName(this@MeshService).first() ?: "Ripple ${identity.nodeId.short}"
+            val avatar = IdentityStore.avatar(this@MeshService).first() ?: AvatarHelper.DEFAULT_AVATAR
+            router.setDisplayName(AvatarHelper.formatWireName(avatar, name))
             // Restore the persisted power profile, then rebuild in-memory state.
             IdentityStore.powerProfile(this@MeshService).first()?.let { code ->
                 if (BatteryProfile.isValid(code)) {
@@ -156,7 +160,7 @@ class MeshService : LifecycleService(), RouterListener {
             }
             val savedPeers = withContext(Dispatchers.IO) { db.peers().all() }
             router.importPeers(savedPeers.mapNotNull { e ->
-                runCatching { Peer(NodeId.fromHex(e.nodeId), Crypto.publicKeyFromWire(e.publicKeyWire), e.publicKeyWire, e.name, e.lastSeen, e.hops) }.getOrNull()
+                runCatching { Peer(NodeId.fromHex(e.nodeId), Crypto.publicKeyFromWire(e.publicKeyWire), e.publicKeyWire, e.name, e.lastSeen, e.hops, e.avatar) }.getOrNull()
             })
             val now = System.currentTimeMillis()
             withContext(Dispatchers.IO) { db.relay().purge(now) }
@@ -234,6 +238,31 @@ class MeshService : LifecycleService(), RouterListener {
         }
     }
 
+    override fun onVoiceMessage(message: InboundVoiceMessage) {
+        val conversation = if (message.isBroadcast) BROADCAST_CONVERSATION else message.from.hex
+        val voiceDir = java.io.File(cacheDir, "voice_notes").apply { mkdirs() }
+        val voiceFile = java.io.File(voiceDir, "vn_${message.messageId.toHex()}.ogg")
+        voiceFile.writeBytes(message.voiceBytes)
+
+        val entity = MessageEntity(
+            messageId = message.messageId.toHex(),
+            conversation = conversation,
+            fromNodeId = message.from.hex,
+            fromName = message.fromName,
+            text = "🎤 Voice message (${(message.durationMs + 500) / 1000}s)",
+            timestamp = message.timestamp,
+            outgoing = false,
+            status = MessageStatus.RECEIVED,
+            verified = message.verified,
+            voicePath = voiceFile.absolutePath,
+            voiceDurationMs = message.durationMs
+        )
+        lifecycleScope.launch(Dispatchers.IO) {
+            db.messages().upsert(entity)
+            if (visibleConversation != conversation) notifyMessage(entity)
+        }
+    }
+
     override fun onAck(messageId: ByteArray, from: NodeId) {
         lifecycleScope.launch(Dispatchers.IO) { db.messages().setStatus(messageId.toHex(), MessageStatus.DELIVERED) }
     }
@@ -241,7 +270,7 @@ class MeshService : LifecycleService(), RouterListener {
     override fun onPeersChanged(peers: List<Peer>) {
         _status.update { it.copy(knownPeers = peers.size) }
         lifecycleScope.launch(Dispatchers.IO) {
-            db.peers().upsertAll(peers.map { PeerEntity(it.nodeId.hex, it.publicKeyWire, it.name, it.lastSeen, it.hops) })
+            db.peers().upsertAll(peers.map { PeerEntity(it.nodeId.hex, it.publicKeyWire, it.name, it.lastSeen, it.hops, it.avatar) })
         }
     }
 
@@ -249,6 +278,14 @@ class MeshService : LifecycleService(), RouterListener {
 
     override fun onSos(beacon: SosBeacon) {
         recentSos = beacon
+        var voicePath: String? = null
+        if (beacon.voiceBytes != null && beacon.voiceBytes.isNotEmpty()) {
+            val voiceDir = java.io.File(cacheDir, "voice_notes").apply { mkdirs() }
+            val voiceFile = java.io.File(voiceDir, "sos_${beacon.messageId.toHex()}.ogg")
+            voiceFile.writeBytes(beacon.voiceBytes)
+            voicePath = voiceFile.absolutePath
+        }
+
         val entity = SosBeaconEntity(
             messageId = beacon.messageId.toHex(),
             fromNodeId = beacon.from.hex,
@@ -259,9 +296,30 @@ class MeshService : LifecycleService(), RouterListener {
             accuracyMeters = beacon.location?.accuracyMeters,
             verified = beacon.verified,
             timestamp = beacon.timestamp,
+            voicePath = voicePath,
+            voiceDurationMs = beacon.voiceDurationMs
         )
-        lifecycleScope.launch(Dispatchers.IO) { db.sos().upsert(entity) }
-        val title = "SOS — ${beacon.fromName ?: beacon.from.display}"
+        lifecycleScope.launch(Dispatchers.IO) {
+            db.sos().upsert(entity)
+            val sosMsg = MessageEntity(
+                messageId = beacon.messageId.toHex(),
+                conversation = BROADCAST_CONVERSATION,
+                fromNodeId = beacon.from.hex,
+                fromName = beacon.fromName,
+                text = if (beacon.text.isBlank()) "🚨 SOS EMERGENCY BEACON BROADCAST" else beacon.text,
+                timestamp = beacon.timestamp,
+                outgoing = false,
+                status = MessageStatus.RECEIVED,
+                verified = beacon.verified,
+                isEdited = false,
+                deletedForEveryone = false,
+                isForwarded = false,
+                voicePath = voicePath,
+                voiceDurationMs = beacon.voiceDurationMs
+            )
+            db.messages().upsert(sosMsg)
+        }
+        val title = "🚨 SOS — ${beacon.fromName ?: beacon.from.display}"
         val body = if (beacon.text.isEmpty()) "An SOS beacon is active nearby." else beacon.text
         val intent = Intent(this, MainActivity::class.java).putExtra("route", "sos")
         val n = NotificationCompat.Builder(this, CHANNEL_MESSAGES)
@@ -313,9 +371,98 @@ class MeshService : LifecycleService(), RouterListener {
     }
 
     /** Broadcast an SOS beacon. `shareLocation` attaches a coarse fix only if granted. */
-    suspend fun sendSos(text: String, shareLocation: Boolean) {
+    suspend fun sendSos(
+        text: String,
+        shareLocation: Boolean,
+        voiceFile: java.io.File? = null,
+        voiceDurationMs: Int? = null
+    ) {
         val location = if (shareLocation) currentLocationOrNull() else null
-        router.sendSos(text, location)
+        val voiceBytes = if (voiceFile != null && voiceFile.exists()) voiceFile.readBytes() else null
+        val id = router.sendSos(text, location, voiceBytes, voiceDurationMs ?: 0)
+        val now = System.currentTimeMillis()
+        val voicePath = voiceFile?.absolutePath
+        val entity = SosBeaconEntity(
+            messageId = id.toHex(),
+            fromNodeId = router.identity.nodeId.hex,
+            fromName = router.displayName,
+            text = text,
+            latE7 = location?.latE7,
+            lngE7 = location?.lngE7,
+            accuracyMeters = location?.accuracyMeters,
+            verified = true,
+            timestamp = now,
+            isAcknowledged = false,
+            voicePath = voicePath,
+            voiceDurationMs = voiceDurationMs
+        )
+        withContext(Dispatchers.IO) {
+            db.sos().upsert(entity)
+            val sosMsg = MessageEntity(
+                messageId = id.toHex(),
+                conversation = BROADCAST_CONVERSATION,
+                fromNodeId = router.identity.nodeId.hex,
+                fromName = router.displayName,
+                text = if (text.isBlank()) "🚨 SOS EMERGENCY BEACON BROADCAST" else text,
+                timestamp = now,
+                outgoing = true,
+                status = MessageStatus.SENT,
+                verified = true,
+                isEdited = false,
+                deletedForEveryone = false,
+                isForwarded = false,
+                voicePath = voicePath,
+                voiceDurationMs = voiceDurationMs
+            )
+            db.messages().upsert(sosMsg)
+        }
+    }
+
+    suspend fun sendVoice(conversation: String, voiceFile: java.io.File, durationMs: Int) {
+        val voiceBytes = voiceFile.readBytes()
+        val isBroadcast = conversation == BROADCAST_CONVERSATION
+        val id = try {
+            if (isBroadcast) {
+                router.sendBroadcastVoice(voiceBytes, durationMs)
+            } else {
+                val dest = NodeId.fromHex(conversation)
+                router.sendDirectVoice(dest, voiceBytes, durationMs)
+            }
+        } catch (e: Exception) {
+            Log.e("MeshService", "Failed to send voice message: ${e.message}", e)
+            persistOutgoingVoice(Crypto.randomBytes(16), conversation, voiceFile.absolutePath, durationMs, MessageStatus.FAILED)
+            return
+        }
+        val status = if (isBroadcast || router.linkCount() > 0) MessageStatus.SENT else MessageStatus.PENDING
+        persistOutgoingVoice(id, conversation, voiceFile.absolutePath, durationMs, status)
+    }
+
+    private suspend fun persistOutgoingVoice(
+        id: ByteArray,
+        conversation: String,
+        voicePath: String,
+        durationMs: Int,
+        status: MessageStatus
+    ) {
+        val now = System.currentTimeMillis()
+        withContext(Dispatchers.IO) {
+            db.messages().upsert(
+                MessageEntity(
+                    messageId = id.toHex(),
+                    conversation = conversation,
+                    fromNodeId = router.selfId.hex,
+                    fromName = router.displayName,
+                    text = "🎤 Voice message (${(durationMs + 500) / 1000}s)",
+                    timestamp = now,
+                    outgoing = true,
+                    status = status,
+                    verified = true,
+                    voicePath = voicePath,
+                    voiceDurationMs = durationMs
+                )
+            )
+        }
+        persistRelayStore()
     }
 
     /** Best-effort last-known location; null unless the operator granted location permission. */
@@ -332,26 +479,71 @@ class MeshService : LifecycleService(), RouterListener {
         )
     }
 
-    suspend fun sendBroadcast(text: String, isForwarded: Boolean = false) {
+    suspend fun sendBroadcast(
+        text: String,
+        isForwarded: Boolean = false,
+        replyToMessageId: String? = null,
+        replyToText: String? = null,
+        replyToSender: String? = null
+    ) {
         val id = router.sendBroadcast(text)
-        persistOutgoing(id, BROADCAST_CONVERSATION, text, MessageStatus.SENT, isForwarded = isForwarded)
+        persistOutgoing(id, BROADCAST_CONVERSATION, text, MessageStatus.SENT, isForwarded = isForwarded, replyToMessageId = replyToMessageId, replyToText = replyToText, replyToSender = replyToSender)
     }
 
-    suspend fun sendDirect(destination: NodeId, text: String, isForwarded: Boolean = false) {
+    suspend fun sendDirect(
+        destination: NodeId,
+        text: String,
+        isForwarded: Boolean = false,
+        replyToMessageId: String? = null,
+        replyToText: String? = null,
+        replyToSender: String? = null
+    ) {
         val id = try { router.sendDirect(destination, text) } catch (e: IllegalStateException) {
-            persistOutgoing(Crypto.randomBytes(16), destination.hex, text, MessageStatus.FAILED, isForwarded = isForwarded); return
+            persistOutgoing(Crypto.randomBytes(16), destination.hex, text, MessageStatus.FAILED, isForwarded = isForwarded, replyToMessageId = replyToMessageId, replyToText = replyToText, replyToSender = replyToSender); return
         }
-        persistOutgoing(id, destination.hex, text, if (router.linkCount() > 0) MessageStatus.SENT else MessageStatus.PENDING, isForwarded = isForwarded)
+        persistOutgoing(id, destination.hex, text, if (router.linkCount() > 0) MessageStatus.SENT else MessageStatus.PENDING, isForwarded = isForwarded, replyToMessageId = replyToMessageId, replyToText = replyToText, replyToSender = replyToSender)
+    }
+
+    suspend fun setUserAvatar(avatar: String) {
+        IdentityStore.setAvatar(this, avatar)
+        val currentName = IdentityStore.displayName(this).first() ?: "Ripple ${router.selfId.short}"
+        router.setDisplayName(AvatarHelper.formatWireName(avatar, currentName))
     }
 
     suspend fun setDisplayName(name: String) {
         IdentityStore.setDisplayName(this, name)
-        router.setDisplayName(name)
+        val currentAvatar = IdentityStore.avatar(this).first() ?: AvatarHelper.DEFAULT_AVATAR
+        router.setDisplayName(AvatarHelper.formatWireName(currentAvatar, name))
     }
 
-    private suspend fun persistOutgoing(id: ByteArray, conversation: String, text: String, status: MessageStatus, isForwarded: Boolean = false) {
+    private suspend fun persistOutgoing(
+        id: ByteArray,
+        conversation: String,
+        text: String,
+        status: MessageStatus,
+        isForwarded: Boolean = false,
+        replyToMessageId: String? = null,
+        replyToText: String? = null,
+        replyToSender: String? = null
+    ) {
         withContext(Dispatchers.IO) {
-            db.messages().upsert(MessageEntity(id.toHex(), conversation, router.selfId.hex, router.displayName, text, System.currentTimeMillis(), true, status, true, isForwarded = isForwarded))
+            db.messages().upsert(
+                MessageEntity(
+                    messageId = id.toHex(),
+                    conversation = conversation,
+                    fromNodeId = router.selfId.hex,
+                    fromName = router.displayName,
+                    text = text,
+                    timestamp = System.currentTimeMillis(),
+                    outgoing = true,
+                    status = status,
+                    verified = true,
+                    isForwarded = isForwarded,
+                    replyToMessageId = replyToMessageId,
+                    replyToText = replyToText,
+                    replyToSender = replyToSender
+                )
+            )
         }
         persistRelayStore()
     }

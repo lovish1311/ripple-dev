@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -97,6 +98,29 @@ fun DiagnosticsScreen(vm: MeshViewModel, onBack: () -> Unit) {
                             Text(stringResource(R.string.loopback_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = status.loopback, onCheckedChange = { vm.setLoopback(it) })
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            vm.simulateIncomingSos(
+                                fromName = "Asha",
+                                fromNodeId = "1e61a2b3c4d5e6f7",
+                                text = "Injured hiker with severe ankle sprain near North Trail marker 4. Need first aid kit & water.",
+                                lat = 37.7749,
+                                lng = -122.4194
+                            )
+                            android.widget.Toast.makeText(context, "Simulated Emergency SOS beacon from Asha broadcasted", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text("🚨 Simulate Incoming SOS (Asha)", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     }
                 }
             }

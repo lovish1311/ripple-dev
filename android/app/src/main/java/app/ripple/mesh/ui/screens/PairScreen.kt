@@ -354,7 +354,8 @@ private fun VerifiedRow(
     val mismatch = current != null && current.publicKeyWire.toHex() != peer.publicKeyWireHex
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Avatar(nodeIdHex = peer.nodeIdHex, avatar = current?.avatar, name = peer.name, size = 42.dp)
                 Column(Modifier.weight(1f)) {
                     Text(peer.name ?: "Peer ${peer.nodeIdHex.takeLast(4)}", style = MaterialTheme.typography.titleMedium)
                     Text(NodeId.fromHex(peer.nodeIdHex).display, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

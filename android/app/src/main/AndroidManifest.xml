@@ -24,6 +24,9 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Audio recording for offline Opus voice notes and emergency SOS memos -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- Keep the mesh alive while backgrounded. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />

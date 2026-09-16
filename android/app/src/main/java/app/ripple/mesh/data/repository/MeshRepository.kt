@@ -11,6 +11,7 @@ interface MeshRepository {
     fun observeConversations(): Flow<List<ConversationSummary>>
     fun observePeers(): Flow<List<PeerEntity>>
     fun observeSosBeacons(): Flow<List<SosBeaconEntity>>
+    fun observeActiveSosBeacons(): Flow<List<SosBeaconEntity>>
     fun observeMessages(conversation: String): Flow<List<MessageEntity>>
     fun observePeer(nodeIdHex: String): Flow<PeerEntity?>
     suspend fun markRead(conversation: String)
@@ -18,6 +19,9 @@ interface MeshRepository {
     suspend fun updateMessageStatus(messageId: String, status: MessageStatus)
     suspend fun savePeers(peers: List<PeerEntity>)
     suspend fun saveSosBeacon(beacon: SosBeaconEntity)
+    suspend fun setSosBeaconAcknowledged(messageId: String, acknowledged: Boolean = true)
+    suspend fun acknowledgeAllSosBeacons()
+    suspend fun deleteSosBeacon(messageId: String)
     suspend fun deleteMessage(messageId: String)
     suspend fun editMessage(messageId: String, newText: String)
     suspend fun markDeletedForEveryone(messageId: String)

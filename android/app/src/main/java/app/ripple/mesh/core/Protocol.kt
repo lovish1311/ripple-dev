@@ -7,7 +7,7 @@ import java.security.MessageDigest
 object Protocol {
     const val VERSION = 1
     const val MAX_TTL = 7
-    const val MAX_PAYLOAD = 4096
+    const val MAX_PAYLOAD = 16384
     const val HEADER_SIZE = 46
     const val SIGNATURE_SIZE = 64
     const val MAX_PACKET = HEADER_SIZE + MAX_PAYLOAD + SIGNATURE_SIZE
@@ -24,6 +24,7 @@ object Protocol {
     // SOS beacon payload (PROTOCOL.md §2.2).
     const val MAX_SOS_TEXT = 128
     const val SOS_FLAG_HAS_LOCATION = 0x01
+    const val SOS_FLAG_HAS_VOICE = 0x02
 
     // BLE
     const val SERVICE_UUID = "7E2C4B10-4B7D-4E3A-9C1F-8A2E5D6F1A01"
@@ -33,7 +34,7 @@ object Protocol {
 }
 
 enum class PacketType(val code: Int) {
-    ANNOUNCE(1), MESSAGE(2), ACK(3), SOS(4);
+    ANNOUNCE(1), MESSAGE(2), ACK(3), SOS(4), VOICE(5);
 
     companion object {
         fun from(code: Int): PacketType? = entries.firstOrNull { it.code == code }
@@ -59,23 +60,65 @@ object BatteryProfile {
     fun relaysOrdinary(code: Int): Boolean = code != POWER_SAVER
 }
 
+/** Codec for voice note payloads: [durationMs: 4 bytes] + [opusData]. */
+object VoiceCodec {
+    fun encode(durationMs: Int, opusBytes: ByteArray): ByteArray {
+        val buf = java.nio.ByteBuffer.allocate(4 + opusBytes.size)
+        buf.putInt(durationMs)
+        buf.put(opusBytes)
+        return buf.array()
+    }
+
+    fun decode(payload: ByteArray): Pair<Int, ByteArray> {
+        if (payload.size < 4) throw ProtocolException("voice payload too short")
+        val buf = java.nio.ByteBuffer.wrap(payload)
+        val durationMs = buf.int
+        val opusBytes = ByteArray(payload.size - 4)
+        buf.get(opusBytes)
+        return Pair(durationMs, opusBytes)
+    }
+}
+
 /** A decoded SOS beacon payload (PROTOCOL.md §2.2). `location` is null unless GPS was opted in. */
-data class SosPayload(val flags: Int, val text: String, val location: SosLocation?)
+data class SosPayload(
+    val flags: Int,
+    val text: String,
+    val location: SosLocation?,
+    val voiceBytes: ByteArray? = null,
+    val voiceDurationMs: Int? = null,
+)
 
 data class SosLocation(val latE7: Int, val lngE7: Int, val accuracyMeters: Int)
 
 object SosCodec {
-    fun encode(text: String, location: SosLocation?): ByteArray {
+    fun encode(
+        text: String,
+        location: SosLocation?,
+        voiceBytes: ByteArray? = null,
+        voiceDurationMs: Int = 0
+    ): ByteArray {
         val textBytes = text.toByteArray(Charsets.UTF_8)
         require(textBytes.size <= Protocol.MAX_SOS_TEXT) { "sos text too long" }
-        val buf = java.nio.ByteBuffer.allocate(2 + textBytes.size + (if (location != null) 10 else 0))
-        buf.put((if (location != null) Protocol.SOS_FLAG_HAS_LOCATION else 0).toByte())
+        val hasLocation = location != null
+        val hasVoice = voiceBytes != null && voiceBytes.isNotEmpty()
+        var flags = 0
+        if (hasLocation) flags = flags or Protocol.SOS_FLAG_HAS_LOCATION
+        if (hasVoice) flags = flags or Protocol.SOS_FLAG_HAS_VOICE
+
+        val extraSize = (if (hasLocation) 10 else 0) + (if (hasVoice) 4 + voiceBytes!!.size else 0)
+        val buf = java.nio.ByteBuffer.allocate(2 + textBytes.size + extraSize)
+        buf.put(flags.toByte())
         buf.put(textBytes.size.toByte())
         buf.put(textBytes)
         if (location != null) {
             buf.putInt(location.latE7)
             buf.putInt(location.lngE7)
             buf.putShort(location.accuracyMeters.toShort())
+        }
+        if (hasVoice) {
+            buf.putShort((voiceDurationMs.coerceIn(0, 65535)).toShort())
+            buf.putShort((voiceBytes!!.size.coerceIn(0, 65535)).toShort())
+            buf.put(voiceBytes)
         }
         return buf.array()
     }
@@ -87,13 +130,32 @@ object SosCodec {
         if (textLen > Protocol.MAX_SOS_TEXT || payload.size < 2 + textLen) throw ProtocolException("sos payload malformed")
         val text = String(payload, 2, textLen, Charsets.UTF_8)
         val hasLocation = flags and Protocol.SOS_FLAG_HAS_LOCATION != 0
-        if (hasLocation) {
-            if (payload.size != 2 + textLen + 10) throw ProtocolException("sos payload length mismatch")
-            val b = java.nio.ByteBuffer.wrap(payload, 2 + textLen, 10)
-            return SosPayload(flags, text, SosLocation(b.int, b.int, b.short.toInt() and 0xffff))
+        val hasVoice = flags and Protocol.SOS_FLAG_HAS_VOICE != 0
+
+        var offset = 2 + textLen
+        val location = if (hasLocation) {
+            if (payload.size < offset + 10) throw ProtocolException("sos payload location truncated")
+            val b = java.nio.ByteBuffer.wrap(payload, offset, 10)
+            offset += 10
+            SosLocation(b.int, b.int, b.short.toInt() and 0xffff)
+        } else null
+
+        var voiceBytes: ByteArray? = null
+        var voiceDurationMs: Int? = null
+        if (hasVoice) {
+            if (payload.size < offset + 4) throw ProtocolException("sos payload voice header truncated")
+            val b = java.nio.ByteBuffer.wrap(payload, offset, 4)
+            offset += 4
+            val dur = b.short.toInt() and 0xffff
+            val vLen = b.short.toInt() and 0xffff
+            if (payload.size < offset + vLen) throw ProtocolException("sos payload voice data truncated")
+            voiceBytes = payload.copyOfRange(offset, offset + vLen)
+            voiceDurationMs = dur
+            offset += vLen
         }
-        if (payload.size != 2 + textLen) throw ProtocolException("sos payload trailing bytes")
-        return SosPayload(flags, text, null)
+
+        if (offset != payload.size) throw ProtocolException("sos payload trailing bytes")
+        return SosPayload(flags, text, location, voiceBytes, voiceDurationMs)
     }
 }
 

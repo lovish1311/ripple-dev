@@ -41,6 +41,11 @@ data class MessageEntity(
     val isEdited: Boolean = false,
     val deletedForEveryone: Boolean = false,
     val isForwarded: Boolean = false,
+    val replyToMessageId: String? = null,
+    val replyToText: String? = null,
+    val replyToSender: String? = null,
+    val voicePath: String? = null,
+    val voiceDurationMs: Int? = null,
 )
 
 @Entity(tableName = "peers")
@@ -50,6 +55,7 @@ data class PeerEntity(
     val name: String,
     val lastSeen: Long,
     val hops: Int,
+    val avatar: String? = null,
 )
 
 /** Relay-store persistence so store-and-forward survives process death. */
@@ -60,8 +66,12 @@ data class RelayPacketEntity(
     val expiresAt: Long,
 )
 
-/** Received SOS beacon history (PROTOCOL.md §2.2), retained for ~90 days. */
-@Entity(tableName = "sos_beacons")
+@Entity(
+    tableName = "sos_beacons",
+    indices = [
+        Index(value = ["isAcknowledged", "timestamp"])
+    ]
+)
 data class SosBeaconEntity(
     @PrimaryKey val messageId: String,           // hex
     val fromNodeId: String,                      // hex
@@ -72,6 +82,9 @@ data class SosBeaconEntity(
     val accuracyMeters: Int?,
     val verified: Boolean,
     val timestamp: Long,
+    val isAcknowledged: Boolean = false,
+    val voicePath: String? = null,
+    val voiceDurationMs: Int? = null,
 )
 
 data class ConversationSummary(val conversation: String, val lastText: String, val lastTimestamp: Long, val unread: Int)
@@ -159,8 +172,20 @@ interface SosBeaconDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(beacon: SosBeaconEntity)
 
+    @Query("SELECT * FROM sos_beacons WHERE isAcknowledged = 0 ORDER BY timestamp DESC")
+    fun observeActive(): Flow<List<SosBeaconEntity>>
+
     @Query("SELECT * FROM sos_beacons ORDER BY timestamp DESC")
     fun observeAll(): Flow<List<SosBeaconEntity>>
+
+    @Query("UPDATE sos_beacons SET isAcknowledged = :acknowledged WHERE messageId = :messageId")
+    suspend fun setAcknowledged(messageId: String, acknowledged: Boolean = true)
+
+    @Query("UPDATE sos_beacons SET isAcknowledged = 1 WHERE isAcknowledged = 0")
+    suspend fun acknowledgeAll()
+
+    @Query("DELETE FROM sos_beacons WHERE messageId = :messageId")
+    suspend fun delete(messageId: String)
 
     @Query("DELETE FROM sos_beacons WHERE timestamp < :cutoff")
     suspend fun prune(cutoff: Long)
@@ -211,7 +236,41 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
-@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 5, exportSchema = false)
+/** v5 → v6: add isAcknowledged column to sos_beacons and index on (isAcknowledged, timestamp). */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sos_beacons` ADD COLUMN `isAcknowledged` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sos_beacons_isAcknowledged_timestamp` ON `sos_beacons` (`isAcknowledged`, `timestamp`)")
+    }
+}
+
+/** v6 → v7: add replyToMessageId, replyToText, and replyToSender columns to messages table. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `replyToMessageId` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `replyToText` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `replyToSender` TEXT DEFAULT NULL")
+    }
+}
+
+/** v7 → v8: add avatar column to peers table. */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `peers` ADD COLUMN `avatar` TEXT DEFAULT NULL")
+    }
+}
+
+/** v8 → v9: add voicePath and voiceDurationMs to messages and sos_beacons tables. */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `voicePath` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `voiceDurationMs` INTEGER DEFAULT NULL")
+        db.execSQL("ALTER TABLE `sos_beacons` ADD COLUMN `voicePath` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `sos_beacons` ADD COLUMN `voiceDurationMs` INTEGER DEFAULT NULL")
+    }
+}
+
+@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 9, exportSchema = false)
 abstract class RippleDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
     abstract fun peers(): PeerDao
@@ -225,7 +284,7 @@ abstract class RippleDatabase : RoomDatabase() {
         @Volatile private var instance: RippleDatabase? = null
         fun get(context: Context): RippleDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, RippleDatabase::class.java, "ripple.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration().build().also { instance = it }
         }
     }

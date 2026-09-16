@@ -48,6 +48,7 @@ import app.ripple.mesh.ui.screens.FieldTestScreen
 import app.ripple.mesh.ui.screens.HomeScreen
 import app.ripple.mesh.ui.screens.PairScreen
 import app.ripple.mesh.ui.screens.PowerScreen
+import app.ripple.mesh.ui.screens.ProfileScreen
 import app.ripple.mesh.ui.screens.SettingsScreen
 import app.ripple.mesh.ui.screens.SosScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -114,13 +115,19 @@ fun RippleRoot(vm: MeshViewModel, fieldTestVm: FieldTestViewModel, launchIntent:
             SettingsScreen(
                 vm,
                 onBack = { nav.popBackStack() },
-                onOpenSos = { nav.navigate("sos") },
+                onOpenProfile = { nav.navigate("profile") },
                 onOpenPower = { nav.navigate("power") },
                 onOpenDiagnostics = { nav.navigate("diagnostics") },
                 onOpenFieldTest = { nav.navigate("fieldtest") },
                 onOpenPair = { nav.navigate("pair") },
                 onOpenBackup = { nav.navigate("backup") },
                 onOpenAppearance = { nav.navigate("appearance") },
+            )
+        }
+        composable("profile") {
+            ProfileScreen(
+                vm = vm,
+                onBack = { nav.popBackStack() },
             )
         }
         composable("pair") {
@@ -189,77 +196,103 @@ fun RippleTheme(vm: MeshViewModel, content: @Composable () -> Unit) {
         )
     }
 
-    val scheme = if (appTheme == AppTheme.SYSTEM || appTheme == AppTheme.LIGHT || appTheme == AppTheme.DARK) {
+    val scheme = if (appTheme == AppTheme.SYSTEM) {
         if (dark) darkColorScheme(
             primary = Color(0xFF7FDBCA),
+            onPrimary = Color(0xFF003730),
+            primaryContainer = Color(0xFF004F46),
+            onPrimaryContainer = Color(0xFF7FDBCA),
             secondary = Color(0xFF9CC5FF),
+            onSecondary = Color(0xFF00315B),
+            secondaryContainer = Color(0xFF1E3A5F),
+            onSecondaryContainer = Color(0xFFD6E4FF),
             tertiary = Color(0xFFFFB59D),
+            onTertiary = Color(0xFF5B1B05),
             background = Color(0xFF121212),
+            onBackground = Color(0xFFF8FAFC),
             surface = Color(0xFF1E1E1E),
-            surfaceVariant = Color(0xFF252525),
+            onSurface = Color(0xFFF8FAFC),
+            surfaceVariant = Color(0xFF282828),
+            onSurfaceVariant = Color(0xFF94A3B8),
             surfaceContainerLow = Color(0xFF181818),
             surfaceContainer = Color(0xFF1E1E1E),
             surfaceContainerHigh = Color(0xFF282828),
             surfaceContainerHighest = Color(0xFF333333),
-            onBackground = Color(0xFFF8FAFC),
-            onSurface = Color(0xFFF8FAFC),
-            onSurfaceVariant = Color(0xFF94A3B8)
+            outline = Color(0xFF475569),
+            outlineVariant = Color(0xFF1E293B)
         )
         else lightColorScheme(
             primary = Color(0xFF006B5E),
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFFCCE8E3),
+            onPrimaryContainer = Color(0xFF003730),
             secondary = Color(0xFF3B5E8C),
+            onSecondary = Color.White,
+            secondaryContainer = Color(0xFFD9E2FF),
+            onSecondaryContainer = Color(0xFF001945),
             tertiary = Color(0xFF9C4325),
+            onTertiary = Color.White,
             background = Color(0xFFF8F9FA),
+            onBackground = Color(0xFF0F172A),
             surface = Color(0xFFFFFFFF),
+            onSurface = Color(0xFF0F172A),
             surfaceVariant = Color(0xFFF1F3F5),
+            onSurfaceVariant = Color(0xFF475569),
             surfaceContainerLow = Color(0xFFF8F9FA),
             surfaceContainer = Color(0xFFF1F3F5),
             surfaceContainerHigh = Color(0xFFE9ECEF),
             surfaceContainerHighest = Color(0xFFDEE2E6),
-            onBackground = Color(0xFF0F172A),
-            onSurface = Color(0xFF0F172A),
-            onSurfaceVariant = Color(0xFF475569)
+            outline = Color(0xFFCBD5E1),
+            outlineVariant = Color(0xFFE2E8F0)
         )
     } else {
-        if (dark) darkColorScheme(
+        if (appTheme.isDark) darkColorScheme(
             primary = appTheme.primaryColor,
-            onPrimary = Color.White,
-            primaryContainer = appTheme.primaryColor,
-            onPrimaryContainer = Color.White,
+            onPrimary = Color(0xFF020617),
+            primaryContainer = appTheme.primaryContainer,
+            onPrimaryContainer = appTheme.onPrimaryContainer,
             secondary = appTheme.secondaryColor,
-            onSecondary = Color.White,
-            secondaryContainer = appTheme.secondaryColor,
-            onSecondaryContainer = Color.White,
+            onSecondary = Color(0xFF020617),
+            secondaryContainer = appTheme.cardColor,
+            onSecondaryContainer = appTheme.textColor,
+            tertiary = appTheme.tertiaryColor,
+            onTertiary = Color(0xFF020617),
             background = appTheme.backgroundColor,
+            onBackground = appTheme.textColor,
             surface = appTheme.surfaceColor,
+            onSurface = appTheme.textColor,
             surfaceVariant = appTheme.cardColor,
+            onSurfaceVariant = appTheme.textSecondaryColor,
             surfaceContainerLow = appTheme.backgroundColor,
             surfaceContainer = appTheme.surfaceColor,
             surfaceContainerHigh = appTheme.cardColor,
             surfaceContainerHighest = appTheme.cardColor,
-            onBackground = appTheme.textColor,
-            onSurface = appTheme.textColor,
-            onSurfaceVariant = Color(0xFF94A3B8)
+            outline = Color(0xFF334155),
+            outlineVariant = Color(0xFF1E293B)
         )
         else lightColorScheme(
             primary = appTheme.primaryColor,
             onPrimary = Color.White,
-            primaryContainer = appTheme.primaryColor,
-            onPrimaryContainer = Color.White,
+            primaryContainer = appTheme.primaryContainer,
+            onPrimaryContainer = appTheme.onPrimaryContainer,
             secondary = appTheme.secondaryColor,
             onSecondary = Color.White,
-            secondaryContainer = appTheme.secondaryColor,
-            onSecondaryContainer = Color.White,
+            secondaryContainer = appTheme.cardColor,
+            onSecondaryContainer = appTheme.textColor,
+            tertiary = appTheme.tertiaryColor,
+            onTertiary = Color.White,
             background = appTheme.backgroundColor,
+            onBackground = appTheme.textColor,
             surface = appTheme.surfaceColor,
+            onSurface = appTheme.textColor,
             surfaceVariant = appTheme.cardColor,
+            onSurfaceVariant = appTheme.textSecondaryColor,
             surfaceContainerLow = appTheme.backgroundColor,
             surfaceContainer = appTheme.surfaceColor,
             surfaceContainerHigh = appTheme.cardColor,
-            surfaceContainerHighest = appTheme.cardColor,
-            onBackground = appTheme.textColor,
-            onSurface = appTheme.textColor,
-            onSurfaceVariant = Color(0xFF475569)
+            surfaceContainerHighest = appTheme.primaryContainer,
+            outline = appTheme.primaryColor.copy(alpha = 0.35f),
+            outlineVariant = appTheme.surfaceColor
         )
     }
 

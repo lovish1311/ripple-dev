@@ -1,5 +1,6 @@
 package app.ripple.mesh.ui
 
+import android.annotation.SuppressLint
 import android.view.ViewGroup
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -83,6 +84,7 @@ import java.util.concurrent.Executors
  * Scans peer identity codes in real time using pure ZXing MultiFormatReader
  * and CameraX ImageAnalysis without requiring Google Play Services or internet.
  */
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrScannerModal(

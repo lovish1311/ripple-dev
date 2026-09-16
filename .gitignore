@@ -378,3 +378,5 @@ ios/DerivedData/
 ios/**/xcuserdata/
 # Node
 node_modules/
+.artifacts/
+android/.artifacts/

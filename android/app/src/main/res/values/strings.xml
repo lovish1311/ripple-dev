@@ -71,21 +71,29 @@
     <string name="appearance_subtitle">Customize theme and typography</string>
     <string name="theme_setting">Theme</string>
     <string name="theme_system">System default</string>
-    <string name="theme_light">Light</string>
-    <string name="theme_dark">Dark</string>
-    <string name="theme_ocean">Ocean</string>
-    <string name="theme_nebula">Nebula</string>
-    <string name="theme_fire">Fire</string>
-    <string name="theme_arctic">Arctic</string>
-    <string name="theme_midnight">Midnight</string>
-    <string name="theme_forest">Forest</string>
-    <string name="theme_electric">Electric</string>
-    <string name="theme_royal">Royal</string>
-    <string name="theme_obsidian">Obsidian</string>
-    <string name="theme_sunset">Sunset</string>
-    <string name="theme_aurora">Aurora</string>
+    <string name="theme_light">Clean Classic</string>
+    <string name="theme_dark">Dark Classic</string>
+    <string name="theme_ocean">Cyber Ice</string>
+    <string name="theme_nebula">Neon Nebula</string>
+    <string name="theme_fire">Solar Flare</string>
+    <string name="theme_arctic">Cyber Ice</string>
+    <string name="theme_midnight">Midnight OLED</string>
+    <string name="theme_forest">Emerald Abyss</string>
+    <string name="theme_electric">Electric Indigo</string>
+    <string name="theme_royal">Royal Violet</string>
+    <string name="theme_obsidian">Obsidian Steel</string>
+    <string name="theme_sunset">Rose Sunset</string>
+    <string name="theme_aurora">Aurora Borealis</string>
     <string name="theme_cyber_ice">Cyber Ice</string>
-    <string name="theme_solar">Solar</string>
+    <string name="theme_solar">Solar Flare</string>
+    <string name="theme_nordic_frost">Nordic Frost</string>
+    <string name="theme_mint_breeze">Mint Breeze</string>
+    <string name="theme_solar_amber">Solar Amber</string>
+    <string name="theme_lavender_mist">Lavender Mist</string>
+    <string name="theme_rose_sunset">Rose Sunset</string>
+    <string name="theme_tab_dark">🌙 Dark Themes</string>
+    <string name="theme_tab_light">☀️ Light Themes</string>
+    <string name="theme_tab_system">⚙️ System</string>
     <string name="font_setting">Font &amp; typography</string>
     <string name="font_family_placeholder">Font Family (Default)</string>
     <string name="font_size_placeholder">Text Size (Normal)</string>
@@ -160,6 +168,10 @@
     <string name="backup_footer">Restore re-derives the node id and key from the blob, so old messages stay decryptable and other nodes keep verifying your signatures. No wire changes — this never leaves the app. See docs/BACKUP.md.</string>
 
     <!-- Message actions -->
+    <string name="action_reply">Reply</string>
+    <string name="replying_to">Replying to %1$s</string>
+    <string name="cancel_reply">Cancel reply</string>
+    <string name="you">You</string>
     <string name="action_copy">Copy</string>
     <string name="action_edit">Edit</string>
     <string name="action_forward">Forward</string>
@@ -190,4 +202,22 @@
     <string name="sos_no_location_hint">No location is attached — responders only see your node id and message.</string>
     <string name="sos_send">Send SOS</string>
     <string name="sos_sent_toast">SOS beacon transmitted to mesh</string>
+
+    <!-- Voice Note & Emergency Audio Strings -->
+    <string name="audio_permission_required">Microphone permission is required to record audio messages.</string>
+    <string name="emergency_voice_memo">Emergency Voice Memo</string>
+    <string name="emergency_voice_memo_desc">5-second ultra-compressed Opus audio memo (12 kbps) attached directly to the SOS mesh packet for offline search &amp; rescue responders.</string>
+    <string name="record_emergency_memo">Record 5s Voice Memo</string>
+    <string name="stop_recording">Stop</string>
+    <string name="cancel_recording">Cancel</string>
+    <string name="re_record">Re-record</string>
+    <string name="play_memo">Play Voice Memo</string>
+    <string name="pause_memo">Pause</string>
+    <string name="voice_note_label">Voice Note</string>
+    <string name="slide_to_cancel">Slide left to cancel</string>
+    <string name="release_to_cancel">Release to cancel</string>
+    <string name="hold_to_record_hint">Hold to record · Release to send</string>
+    <string name="hold_to_record_memo">Hold to record memo (or tap for hands-free)</string>
+    <string name="recording_memo_hold">Recording... Release to attach memo</string>
+    <string name="finish_memo">Finish</string>
 </resources>

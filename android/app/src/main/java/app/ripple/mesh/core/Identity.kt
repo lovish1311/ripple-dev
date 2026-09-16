@@ -48,12 +48,28 @@ object PacketFactory {
         return build(identity, PacketType.MESSAGE, box, destination, Flags.ENCRYPTED, messageId = messageId)
     }
 
+    fun broadcastVoice(identity: Identity, voiceBytes: ByteArray, durationMs: Int): Packet =
+        build(identity, PacketType.VOICE, VoiceCodec.encode(durationMs, voiceBytes))
+
+    fun directVoice(identity: Identity, destination: NodeId, recipientWire: ByteArray, voiceBytes: ByteArray, durationMs: Int): Packet {
+        val messageId = Crypto.randomBytes(Protocol.MESSAGE_ID_SIZE)
+        val payload = VoiceCodec.encode(durationMs, voiceBytes)
+        val box = Crypto.encrypt(recipientWire, messageId, identity.nodeId, destination, payload)
+        return build(identity, PacketType.VOICE, box, destination, Flags.ENCRYPTED, messageId = messageId)
+    }
+
     fun ack(identity: Identity, destination: NodeId, acknowledgedMessageId: ByteArray): Packet =
         build(identity, PacketType.ACK, acknowledgedMessageId, destination)
 
     /** An SOS beacon, broadcast mesh-wide. `location` is only included when GPS was opted in. */
-    fun sos(identity: Identity, text: String, location: SosLocation? = null): Packet =
-        build(identity, PacketType.SOS, SosCodec.encode(text, location))
+    fun sos(
+        identity: Identity,
+        text: String,
+        location: SosLocation? = null,
+        voiceBytes: ByteArray? = null,
+        voiceDurationMs: Int = 0
+    ): Packet =
+        build(identity, PacketType.SOS, SosCodec.encode(text, location, voiceBytes, voiceDurationMs))
 
     private fun String.trimToNameLimit(): String {
         var s = this

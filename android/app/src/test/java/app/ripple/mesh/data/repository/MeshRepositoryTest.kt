@@ -317,10 +317,27 @@ class MeshRepositoryTest {
             beacons[beacon.messageId] = beacon
         }
 
+        override fun observeActive(): Flow<List<SosBeaconEntity>> =
+            flowOf(beacons.values.filter { !it.isAcknowledged }.toList())
+
         override fun observeAll(): Flow<List<SosBeaconEntity>> = flowOf(beacons.values.toList())
+
+        override suspend fun setAcknowledged(messageId: String, acknowledged: Boolean) {
+            beacons[messageId]?.let { beacons[messageId] = it.copy(isAcknowledged = acknowledged) }
+        }
+
+        override suspend fun acknowledgeAll() {
+            beacons.keys.forEach { k ->
+                beacons[k]?.let { beacons[k] = it.copy(isAcknowledged = true) }
+            }
+        }
 
         override suspend fun prune(cutoff: Long) {
             beacons.entries.removeIf { it.value.timestamp < cutoff }
+        }
+
+        override suspend fun delete(messageId: String) {
+            beacons.remove(messageId)
         }
 
         override suspend fun clearAll() {

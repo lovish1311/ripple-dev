@@ -31,6 +31,8 @@ class MeshRepositoryImpl @Inject constructor(
 
     override fun observeSosBeacons(): Flow<List<SosBeaconEntity>> = sosBeaconDao.observeAll()
 
+    override fun observeActiveSosBeacons(): Flow<List<SosBeaconEntity>> = sosBeaconDao.observeActive()
+
     override fun observeMessages(conversation: String): Flow<List<MessageEntity>> = messageDao.observeConversation(conversation)
 
     override fun observePeer(nodeIdHex: String): Flow<PeerEntity?> = peerDao.observe(nodeIdHex)
@@ -53,6 +55,18 @@ class MeshRepositoryImpl @Inject constructor(
 
     override suspend fun saveSosBeacon(beacon: SosBeaconEntity) = withContext(ioDispatcher) {
         sosBeaconDao.upsert(beacon)
+    }
+
+    override suspend fun setSosBeaconAcknowledged(messageId: String, acknowledged: Boolean) = withContext(ioDispatcher) {
+        sosBeaconDao.setAcknowledged(messageId, acknowledged)
+    }
+
+    override suspend fun acknowledgeAllSosBeacons() = withContext(ioDispatcher) {
+        sosBeaconDao.acknowledgeAll()
+    }
+
+    override suspend fun deleteSosBeacon(messageId: String) = withContext(ioDispatcher) {
+        sosBeaconDao.delete(messageId)
     }
 
     override suspend fun deleteMessage(messageId: String) = withContext(ioDispatcher) {
