@@ -16,9 +16,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -29,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +60,7 @@ import app.ripple.mesh.data.VerifiedPeer
 import app.ripple.mesh.data.VerifiedPeers
 import app.ripple.mesh.ui.MeshViewModel
 import app.ripple.mesh.ui.Qr
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -69,7 +76,11 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
+fun PairScreen(
+    vm: MeshViewModel,
+    onBack: () -> Unit,
+    onNavigateToChat: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selfKeyHex by vm.selfPublicKeyHex.collectAsStateWithLifecycle()
@@ -88,6 +99,7 @@ fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
     var parsed by remember { mutableStateOf<Pairing.IdentityCode?>(null) }
     var parseFailed by remember { mutableStateOf(false) }
     var pinNote by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text to isError
+    var showDeleteDataDialog by remember { mutableStateOf(false) }
 
     fun copyText(label: String, value: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -137,6 +149,51 @@ fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
             // ---- import a peer's code -------------------------------------------------
             Text(stringResource(R.string.pair_import_title), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.pair_import_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            var isScanning by remember { mutableStateOf(false) }
+            val cameraPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+            ) { isGranted ->
+                if (isGranted) {
+                    isScanning = true
+                }
+            }
+
+            Button(
+                onClick = {
+                    val hasCamPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.CAMERA,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (hasCamPermission) {
+                        isScanning = true
+                    } else {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = "Scan QR Code",
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text("Scan Peer QR Code")
+            }
+
+            if (isScanning) {
+                app.ripple.mesh.ui.QrScannerModal(
+                    onDismiss = { isScanning = false },
+                    onScanned = { code ->
+                        importText = code
+                        parsed = Pairing.decodeIdentityCode(code)
+                        parseFailed = parsed == null
+                        pinNote = null
+                    },
+                )
+            }
+
             OutlinedTextField(
                 value = importText,
                 onValueChange = { importText = it; parsed = null; parseFailed = false; pinNote = null },
@@ -197,10 +254,22 @@ fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
                                             Pairing.VerifyOutcome.CONFLICT -> R.string.pair_conflict to true
                                         }
                                         pinNote = context.getString(res.first) to res.second
-                                        if (!res.second) { importText = ""; parsed = null }
+                                        if (!res.second) {
+                                            delay(300)
+                                            onNavigateToChat(p.nodeIdHex)
+                                        }
                                     }
                                 },
                             ) { Text(stringResource(R.string.pair_pin)) }
+
+                            Button(
+                                onClick = { onNavigateToChat(p.nodeIdHex) },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                                Text("Open Chat")
+                            }
+
                             OutlinedButton(onClick = { copyText("Ripple identity code", p.encode()) }) { Text(stringResource(R.string.copy)) }
                         }
                         pinNote?.let { (msg, isError) ->
@@ -223,9 +292,48 @@ fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
                     livePeers = livePeers,
                     onUnpin = { scope.launch { VerifiedPeers.unpin(context, v.nodeIdHex) } },
                     onCopy = { copyText("Ripple identity code", it) },
+                    onChat = { onNavigateToChat(v.nodeIdHex) },
                 )
             }
             Text(stringResource(R.string.pair_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            HorizontalDivider()
+
+            // ---- Temporary Delete Data Option (Reset DB & Pairings) -------------------
+            Button(
+                onClick = { showDeleteDataDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Text("Delete All Stored Data & Pairings")
+            }
+
+            if (showDeleteDataDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDataDialog = false },
+                    title = { Text("Delete All Local Data?") },
+                    text = { Text("This will permanently remove all messages, chats, discovered peers, and verified pairings from your local database. This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                vm.clearAllData()
+                                showDeleteDataDialog = false
+                                importText = ""
+                                parsed = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text("Delete Everything")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDataDialog = false }) {
+                            Text("Cancel")
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -233,7 +341,13 @@ fun PairScreen(vm: MeshViewModel, onBack: () -> Unit) {
 private val GreenOk = Color(0xFF2E7D32)
 
 @Composable
-private fun VerifiedRow(peer: VerifiedPeer, livePeers: List<PeerEntity>, onUnpin: () -> Unit, onCopy: (String) -> Unit) {
+private fun VerifiedRow(
+    peer: VerifiedPeer,
+    livePeers: List<PeerEntity>,
+    onUnpin: () -> Unit,
+    onCopy: (String) -> Unit,
+    onChat: () -> Unit = {},
+) {
     val current = livePeers.firstOrNull { it.nodeId == peer.nodeIdHex }
     // Defence-in-depth: the pinned key vs whatever the mesh peer table currently holds for that id
     // (v1 can only disagree on a ~2^64 id collision — see ROADMAP 0.2 scope note — but show it if so).
@@ -244,6 +358,9 @@ private fun VerifiedRow(peer: VerifiedPeer, livePeers: List<PeerEntity>, onUnpin
                 Column(Modifier.weight(1f)) {
                     Text(peer.name ?: "Peer ${peer.nodeIdHex.takeLast(4)}", style = MaterialTheme.typography.titleMedium)
                     Text(NodeId.fromHex(peer.nodeIdHex).display, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onChat) {
+                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chat with peer", tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = { onCopy(Pairing.IdentityCode(peer.nodeIdHex, peer.publicKeyWireHex, peer.name).encode()) }) {
                     Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share))
@@ -261,3 +378,4 @@ private fun VerifiedRow(peer: VerifiedPeer, livePeers: List<PeerEntity>, onUnpin
         }
     }
 }
+

@@ -6,6 +6,7 @@ import app.ripple.mesh.data.MessageEntity
 import app.ripple.mesh.data.MessageStatus
 import app.ripple.mesh.data.PeerDao
 import app.ripple.mesh.data.PeerEntity
+import app.ripple.mesh.data.RelayDao
 import app.ripple.mesh.data.SosBeaconDao
 import app.ripple.mesh.data.SosBeaconEntity
 import app.ripple.mesh.di.IoDispatcher
@@ -19,6 +20,7 @@ import javax.inject.Singleton
 class MeshRepositoryImpl @Inject constructor(
     private val messageDao: MessageDao,
     private val peerDao: PeerDao,
+    private val relayDao: RelayDao,
     private val sosBeaconDao: SosBeaconDao,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : MeshRepository {
@@ -51,5 +53,28 @@ class MeshRepositoryImpl @Inject constructor(
 
     override suspend fun saveSosBeacon(beacon: SosBeaconEntity) = withContext(ioDispatcher) {
         sosBeaconDao.upsert(beacon)
+    }
+
+    override suspend fun deleteMessage(messageId: String) = withContext(ioDispatcher) {
+        messageDao.deleteMessage(messageId)
+    }
+
+    override suspend fun editMessage(messageId: String, newText: String) = withContext(ioDispatcher) {
+        messageDao.updateMessageText(messageId, newText, isEdited = true)
+    }
+
+    override suspend fun markDeletedForEveryone(messageId: String) = withContext(ioDispatcher) {
+        messageDao.markDeletedForEveryone(messageId)
+    }
+
+    override suspend fun getMessage(messageId: String): MessageEntity? = withContext(ioDispatcher) {
+        messageDao.getMessage(messageId)
+    }
+
+    override suspend fun clearAllData() = withContext(ioDispatcher) {
+        messageDao.clearAll()
+        peerDao.clearAll()
+        relayDao.clearAll()
+        sosBeaconDao.clearAll()
     }
 }

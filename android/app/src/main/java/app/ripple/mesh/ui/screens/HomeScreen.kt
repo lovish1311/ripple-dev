@@ -67,6 +67,23 @@ import app.ripple.mesh.ui.MeshViewModel
 import java.text.DateFormat
 import java.util.Date
 
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: () -> Unit) {
@@ -74,23 +91,43 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
     val conversations by vm.conversations.collectAsStateWithLifecycle()
     val peers by vm.peers.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
+    var showSosSheet by remember { mutableStateOf(false) }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                titleContentColor = MaterialTheme.colorScheme.onSurface
-            ),
-            title = {
-                Column {
-                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(2.dp))
-                    MeshStatusPill(status = status)
-                }
-            },
-            actions = { IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) } },
-        )
-    }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                title = {
+                    Column {
+                        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(2.dp))
+                        MeshStatusPill(status = status)
+                    }
+                },
+                actions = { IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) } },
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showSosSheet = true },
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 10.dp),
+                modifier = Modifier.padding(end = 8.dp, bottom = 12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.sos_fab_label),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+    ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -212,6 +249,185 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) { items(peers, key = { it.nodeId }) { PeerRow(it) { onOpenChat(it.nodeId) } } }
                 }
+            }
+        }
+    }
+
+    if (showSosSheet) {
+        SosBottomSheet(
+            vm = vm,
+            onDismiss = { showSosSheet = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SosBottomSheet(
+    vm: MeshViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var message by remember { mutableStateOf("") }
+    var shareLocation by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.sos_beacon_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.cancel)
+                    )
+                }
+            }
+
+            // Warning Card
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.sos_beacon_warning),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+
+            // Message TextField
+            OutlinedTextField(
+                value = message,
+                onValueChange = { message = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.sos_message_label)) },
+                placeholder = { Text("Describe emergency / need...") },
+                shape = RoundedCornerShape(12.dp),
+                maxLines = 4
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Opt-in GPS Section
+            Text(
+                text = stringResource(R.string.sos_opt_in_gps),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = stringResource(R.string.sos_include_location),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.sos_location_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = shareLocation,
+                    onCheckedChange = { shareLocation = it }
+                )
+            }
+
+            if (!shareLocation) {
+                Text(
+                    text = stringResource(R.string.sos_no_location_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Start
+                )
+            }
+
+            // Transmit SOS Beacon Button
+            Button(
+                onClick = {
+                    vm.sendSos(message.trim(), shareLocation)
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.sos_sent_toast),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.sos_send),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

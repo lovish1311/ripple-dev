@@ -18,4 +18,9 @@ interface MeshRepository {
     suspend fun updateMessageStatus(messageId: String, status: MessageStatus)
     suspend fun savePeers(peers: List<PeerEntity>)
     suspend fun saveSosBeacon(beacon: SosBeaconEntity)
+    suspend fun deleteMessage(messageId: String)
+    suspend fun editMessage(messageId: String, newText: String)
+    suspend fun markDeletedForEveryone(messageId: String)
+    suspend fun getMessage(messageId: String): MessageEntity?
+    suspend fun clearAllData()
 }

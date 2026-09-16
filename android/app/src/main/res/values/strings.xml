@@ -158,4 +158,36 @@
     <string name="backup_restored">Restored. Restart Ripple to activate the identity.</string>
     <string name="backup_restart_now">Restart now</string>
     <string name="backup_footer">Restore re-derives the node id and key from the blob, so old messages stay decryptable and other nodes keep verifying your signatures. No wire changes — this never leaves the app. See docs/BACKUP.md.</string>
+
+    <!-- Message actions -->
+    <string name="action_copy">Copy</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_forward">Forward</string>
+    <string name="action_delete">Delete</string>
+    <string name="delete_message_title">Delete message?</string>
+    <string name="delete_for_me">Delete for me</string>
+    <string name="delete_for_everyone">Delete for everyone</string>
+    <string name="delete_for_everyone_prompt">This will remove the message for everyone in this chat.</string>
+    <string name="message_deleted">Message deleted</string>
+    <string name="undo">Undo</string>
+    <string name="edited_label">edited</string>
+    <string name="deleted_message_placeholder">This message was deleted</string>
+    <string name="editing_message">Editing message</string>
+    <string name="forward_message">Forward message</string>
+    <string name="forward_to">Forward to</string>
+    <string name="message_forwarded">Message forwarded</string>
+    <string name="forwarded_label">Forwarded</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+
+    <!-- SOS Beacon Strings -->
+    <string name="sos_fab_label">SOS</string>
+    <string name="sos_beacon_title">Broadcast SOS Beacon</string>
+    <string name="sos_beacon_warning">This beacon reaches every phone in the mesh — even through power-saver relays.</string>
+    <string name="sos_message_label">Message for responders (optional)</string>
+    <string name="sos_opt_in_gps">Opt-in GPS</string>
+    <string name="sos_include_location">Include my location</string>
+    <string name="sos_location_hint">Location is only sent when you opt in. Requires location permission.</string>
+    <string name="sos_no_location_hint">No location is attached — responders only see your node id and message.</string>
+    <string name="sos_send">Send SOS</string>
+    <string name="sos_sent_toast">SOS beacon transmitted to mesh</string>
 </resources>

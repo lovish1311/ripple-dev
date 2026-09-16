@@ -83,6 +83,11 @@ object VerifiedPeers {
         }
     }
 
+    /** Clear all verified peer pins (e.g. debug / reset). */
+    suspend fun clearAll(context: Context) {
+        context.verifiedPeersData.edit { it.remove(KEY) }
+    }
+
     private fun parse(json: String?): List<VerifiedPeer> {
         if (json.isNullOrEmpty()) return emptyList()
         return runCatching {

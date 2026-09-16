@@ -6,6 +6,8 @@ import app.ripple.mesh.data.MessageEntity
 import app.ripple.mesh.data.MessageStatus
 import app.ripple.mesh.data.PeerDao
 import app.ripple.mesh.data.PeerEntity
+import app.ripple.mesh.data.RelayDao
+import app.ripple.mesh.data.RelayPacketEntity
 import app.ripple.mesh.data.SosBeaconDao
 import app.ripple.mesh.data.SosBeaconEntity
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,7 @@ class MeshRepositoryTest {
 
     private lateinit var fakeMessageDao: FakeMessageDao
     private lateinit var fakePeerDao: FakePeerDao
+    private lateinit var fakeRelayDao: FakeRelayDao
     private lateinit var fakeSosBeaconDao: FakeSosBeaconDao
     private lateinit var repository: MeshRepositoryImpl
 
@@ -31,12 +34,14 @@ class MeshRepositoryTest {
     fun setUp() {
         fakeMessageDao = FakeMessageDao()
         fakePeerDao = FakePeerDao()
+        fakeRelayDao = FakeRelayDao()
         fakeSosBeaconDao = FakeSosBeaconDao()
         repository = MeshRepositoryImpl(
             messageDao = fakeMessageDao,
             peerDao = fakePeerDao,
+            relayDao = fakeRelayDao,
             sosBeaconDao = fakeSosBeaconDao,
-            ioDispatcher = Dispatchers.Unconfined
+            ioDispatcher = Dispatchers.Unconfined,
         )
     }
 
@@ -59,6 +64,35 @@ class MeshRepositoryTest {
 
         assertEquals(1, messages.size)
         assertEquals("Hello Ripple", messages[0].text)
+    }
+
+    @Test
+    fun testClearAllData() = runTest {
+        val msg = MessageEntity(
+            messageId = "msg1",
+            conversation = "peer1",
+            fromNodeId = "peer1",
+            fromName = "Alice",
+            text = "Hello",
+            timestamp = 1000L,
+            outgoing = false,
+            status = MessageStatus.RECEIVED,
+            verified = true
+        )
+        repository.saveMessage(msg)
+        val peer = PeerEntity(
+            nodeId = "peer1",
+            publicKeyWire = byteArrayOf(1, 2, 3),
+            name = "Bob",
+            lastSeen = 5000L,
+            hops = 1
+        )
+        repository.savePeers(listOf(peer))
+
+        repository.clearAllData()
+
+        assertEquals(0, repository.observeMessages("peer1").first().size)
+        assertEquals(0, repository.observePeers().first().size)
     }
 
     @Test
@@ -120,6 +154,71 @@ class MeshRepositoryTest {
         assertEquals("Need help!", beacons[0].text)
     }
 
+    @Test
+    fun testDeleteMessage() = runTest {
+        val msg = MessageEntity(
+            messageId = "msg_del",
+            conversation = "peer1",
+            fromNodeId = "peer1",
+            fromName = "Alice",
+            text = "To be deleted",
+            timestamp = 1000L,
+            outgoing = false,
+            status = MessageStatus.RECEIVED,
+            verified = true
+        )
+        repository.saveMessage(msg)
+        assertEquals(1, repository.observeMessages("peer1").first().size)
+
+        repository.deleteMessage("msg_del")
+        assertEquals(0, repository.observeMessages("peer1").first().size)
+    }
+
+    @Test
+    fun testEditMessage() = runTest {
+        val msg = MessageEntity(
+            messageId = "msg_edit",
+            conversation = "peer1",
+            fromNodeId = "self",
+            fromName = "Me",
+            text = "Original text",
+            timestamp = 1000L,
+            outgoing = true,
+            status = MessageStatus.SENT,
+            verified = true,
+            isEdited = false
+        )
+        repository.saveMessage(msg)
+        repository.editMessage("msg_edit", "Edited text")
+
+        val updated = repository.getMessage("msg_edit")
+        assertNotNull(updated)
+        assertEquals("Edited text", updated?.text)
+        assertEquals(true, updated?.isEdited)
+    }
+
+    @Test
+    fun testMarkDeletedForEveryone() = runTest {
+        val msg = MessageEntity(
+            messageId = "msg_everyone",
+            conversation = "peer1",
+            fromNodeId = "self",
+            fromName = "Me",
+            text = "Sensitive info",
+            timestamp = 1000L,
+            outgoing = true,
+            status = MessageStatus.SENT,
+            verified = true,
+            deletedForEveryone = false
+        )
+        repository.saveMessage(msg)
+        repository.markDeletedForEveryone("msg_everyone")
+
+        val updated = repository.getMessage("msg_everyone")
+        assertNotNull(updated)
+        assertEquals(true, updated?.deletedForEveryone)
+    }
+
     // Fake DAOs for unit testing repository behavior without Android SDK database bindings
     private class FakeMessageDao : MessageDao {
         private val messages = mutableMapOf<String, MessageEntity>()
@@ -148,7 +247,31 @@ class MeshRepositoryTest {
             }
         }
 
+        override suspend fun countUnread(): Int = messages.values.count { it.status == MessageStatus.RECEIVED && !it.outgoing }
+
         override suspend fun exists(messageId: String): Int = if (messages.containsKey(messageId)) 1 else 0
+
+        override suspend fun deleteMessage(messageId: String) {
+            messages.remove(messageId)
+        }
+
+        override suspend fun updateMessageText(messageId: String, newText: String, isEdited: Boolean) {
+            messages[messageId]?.let {
+                messages[messageId] = it.copy(text = newText, isEdited = isEdited)
+            }
+        }
+
+        override suspend fun markDeletedForEveryone(messageId: String) {
+            messages[messageId]?.let {
+                messages[messageId] = it.copy(deletedForEveryone = true)
+            }
+        }
+
+        override suspend fun getMessage(messageId: String): MessageEntity? = messages[messageId]
+
+        override suspend fun clearAll() {
+            messages.clear()
+        }
     }
 
     private class FakePeerDao : PeerDao {
@@ -163,6 +286,28 @@ class MeshRepositoryTest {
         override suspend fun all(): List<PeerEntity> = peers.values.toList()
 
         override fun observe(nodeId: String): Flow<PeerEntity?> = flowOf(peers[nodeId])
+
+        override suspend fun clearAll() {
+            peers.clear()
+        }
+    }
+
+    private class FakeRelayDao : RelayDao {
+        private val packets = mutableMapOf<String, RelayPacketEntity>()
+
+        override suspend fun upsertAll(packets: List<RelayPacketEntity>) {
+            packets.forEach { this.packets[it.messageId] = it }
+        }
+
+        override suspend fun live(now: Long): List<RelayPacketEntity> = packets.values.filter { it.expiresAt > now }
+
+        override suspend fun purge(now: Long) {
+            packets.entries.removeIf { it.value.expiresAt <= now }
+        }
+
+        override suspend fun clearAll() {
+            packets.clear()
+        }
     }
 
     private class FakeSosBeaconDao : SosBeaconDao {
@@ -176,6 +321,10 @@ class MeshRepositoryTest {
 
         override suspend fun prune(cutoff: Long) {
             beacons.entries.removeIf { it.value.timestamp < cutoff }
+        }
+
+        override suspend fun clearAll() {
+            beacons.clear()
         }
     }
 }

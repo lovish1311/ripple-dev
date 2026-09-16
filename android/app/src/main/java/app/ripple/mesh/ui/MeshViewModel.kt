@@ -120,6 +120,31 @@ class MeshViewModel @Inject constructor(
         if (conversation == MeshService.BROADCAST_CONVERSATION) s.sendBroadcast(text) else s.sendDirect(NodeId.fromHex(conversation), text)
     }
 
+    fun deleteMessageForMe(messageId: String) = viewModelScope.launch {
+        repository.deleteMessage(messageId)
+    }
+
+    fun restoreMessage(message: MessageEntity) = viewModelScope.launch {
+        repository.saveMessage(message)
+    }
+
+    fun deleteMessageForEveryone(messageId: String) = viewModelScope.launch {
+        repository.markDeletedForEveryone(messageId)
+    }
+
+    fun editMessage(messageId: String, newText: String) = viewModelScope.launch {
+        repository.editMessage(messageId, newText)
+    }
+
+    fun forwardMessage(targetConversation: String, text: String) = viewModelScope.launch {
+        val s = service.value ?: return@launch
+        if (targetConversation == MeshService.BROADCAST_CONVERSATION) {
+            s.sendBroadcast(text, isForwarded = true)
+        } else {
+            s.sendDirect(NodeId.fromHex(targetConversation), text, isForwarded = true)
+        }
+    }
+
     fun setDisplayName(name: String) = viewModelScope.launch { service.value?.setDisplayName(name) ?: IdentityStore.setDisplayName(getApplication(), name) }
 
     fun setPowerProfile(code: Int) = viewModelScope.launch { service.value?.setPowerProfile(code) }
@@ -151,6 +176,11 @@ class MeshViewModel @Inject constructor(
     fun linkInfos(): List<LinkInfo> = service.value?.linkInfos() ?: emptyList()
     fun diagnosticsHeader(): String = service.value?.diagnosticsHeader() ?: "Ripple diagnostics (service not bound)"
     fun setLoopback(enabled: Boolean) { service.value?.setLoopback(enabled) }
+
+    fun clearAllData() = viewModelScope.launch {
+        repository.clearAllData()
+        app.ripple.mesh.data.VerifiedPeers.clearAll(getApplication())
+    }
 
     override fun onCleared() {
         runCatching { getApplication<Application>().unbindService(connection) }

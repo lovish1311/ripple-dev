@@ -38,6 +38,9 @@ data class MessageEntity(
     val outgoing: Boolean,
     val status: MessageStatus,
     val verified: Boolean,
+    val isEdited: Boolean = false,
+    val deletedForEveryone: Boolean = false,
+    val isForwarded: Boolean = false,
 )
 
 @Entity(tableName = "peers")
@@ -101,6 +104,21 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE messageId = :messageId")
     suspend fun exists(messageId: String): Int
+
+    @Query("DELETE FROM messages WHERE messageId = :messageId")
+    suspend fun deleteMessage(messageId: String)
+
+    @Query("UPDATE messages SET text = :newText, isEdited = :isEdited WHERE messageId = :messageId")
+    suspend fun updateMessageText(messageId: String, newText: String, isEdited: Boolean = true)
+
+    @Query("UPDATE messages SET deletedForEveryone = 1 WHERE messageId = :messageId")
+    suspend fun markDeletedForEveryone(messageId: String)
+
+    @Query("SELECT * FROM messages WHERE messageId = :messageId LIMIT 1")
+    suspend fun getMessage(messageId: String): MessageEntity?
+
+    @Query("DELETE FROM messages")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -116,6 +134,9 @@ interface PeerDao {
 
     @Query("SELECT * FROM peers WHERE nodeId = :nodeId")
     fun observe(nodeId: String): Flow<PeerEntity?>
+
+    @Query("DELETE FROM peers")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -128,6 +149,9 @@ interface RelayDao {
 
     @Query("DELETE FROM relay_packets WHERE expiresAt <= :now")
     suspend fun purge(now: Long)
+
+    @Query("DELETE FROM relay_packets")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -140,6 +164,9 @@ interface SosBeaconDao {
 
     @Query("DELETE FROM sos_beacons WHERE timestamp < :cutoff")
     suspend fun prune(cutoff: Long)
+
+    @Query("DELETE FROM sos_beacons")
+    suspend fun clearAll()
 }
 
 /** v1 → v2: add the `sos_beacons` history table. */
@@ -169,7 +196,22 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 3, exportSchema = false)
+/** v3 → v4: add isEdited and deletedForEveryone columns to messages table. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `isEdited` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `deletedForEveryone` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v4 → v5: add isForwarded column to messages table. */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `messages` ADD COLUMN `isForwarded` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+@Database(entities = [MessageEntity::class, PeerEntity::class, RelayPacketEntity::class, SosBeaconEntity::class], version = 5, exportSchema = false)
 abstract class RippleDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
     abstract fun peers(): PeerDao
@@ -183,7 +225,7 @@ abstract class RippleDatabase : RoomDatabase() {
         @Volatile private var instance: RippleDatabase? = null
         fun get(context: Context): RippleDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, RippleDatabase::class.java, "ripple.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration().build().also { instance = it }
         }
     }

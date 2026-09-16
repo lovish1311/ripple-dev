@@ -93,6 +93,13 @@ dependencies {
     // pure Java, mavenCentral-published, and pulls nothing else.
     implementation("com.google.zxing:core:3.5.3")
 
+    // CameraX for 100% offline, F-Droid compliant in-app QR code scanning
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")

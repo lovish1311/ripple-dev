@@ -123,7 +123,15 @@ fun RippleRoot(vm: MeshViewModel, fieldTestVm: FieldTestViewModel, launchIntent:
                 onOpenAppearance = { nav.navigate("appearance") },
             )
         }
-        composable("pair") { PairScreen(vm, onBack = { nav.popBackStack() }) }
+        composable("pair") {
+            PairScreen(
+                vm = vm,
+                onBack = { nav.popBackStack() },
+                onNavigateToChat = { conversation ->
+                    nav.navigate("chat/$conversation")
+                },
+            )
+        }
         composable("backup") { BackupScreen(vm, onBack = { nav.popBackStack() }) }
         composable("appearance") { AppearanceScreen(vm, onBack = { nav.popBackStack() }) }
         composable("sos") { SosScreen(vm, onBack = { nav.popBackStack() }) }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -100,6 +101,47 @@ fun SettingsScreen(
             Text(stringResource(R.string.backup_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = onOpenAppearance, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.appearance)) }
             Text(stringResource(R.string.appearance_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            HorizontalDivider()
+
+            var showDeleteDialog by remember { mutableStateOf(false) }
+            Button(
+                onClick = { showDeleteDialog = true },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text("Delete All Stored Data & Pairings")
+            }
+
+            if (showDeleteDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Delete All Local Data?") },
+                    text = { Text("This will permanently remove all messages, conversations, discovered peers, and verified pairings from your local database. This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                vm.clearAllData()
+                                showDeleteDialog = false
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text("Delete Everything")
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) {
+                            Text("Cancel")
+                        }
+                    },
+                )
+            }
+
             Text(stringResource(R.string.about_blurb), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

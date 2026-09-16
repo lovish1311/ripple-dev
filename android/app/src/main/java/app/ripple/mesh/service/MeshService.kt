@@ -332,16 +332,16 @@ class MeshService : LifecycleService(), RouterListener {
         )
     }
 
-    suspend fun sendBroadcast(text: String) {
+    suspend fun sendBroadcast(text: String, isForwarded: Boolean = false) {
         val id = router.sendBroadcast(text)
-        persistOutgoing(id, BROADCAST_CONVERSATION, text, MessageStatus.SENT)
+        persistOutgoing(id, BROADCAST_CONVERSATION, text, MessageStatus.SENT, isForwarded = isForwarded)
     }
 
-    suspend fun sendDirect(destination: NodeId, text: String) {
+    suspend fun sendDirect(destination: NodeId, text: String, isForwarded: Boolean = false) {
         val id = try { router.sendDirect(destination, text) } catch (e: IllegalStateException) {
-            persistOutgoing(Crypto.randomBytes(16), destination.hex, text, MessageStatus.FAILED); return
+            persistOutgoing(Crypto.randomBytes(16), destination.hex, text, MessageStatus.FAILED, isForwarded = isForwarded); return
         }
-        persistOutgoing(id, destination.hex, text, if (router.linkCount() > 0) MessageStatus.SENT else MessageStatus.PENDING)
+        persistOutgoing(id, destination.hex, text, if (router.linkCount() > 0) MessageStatus.SENT else MessageStatus.PENDING, isForwarded = isForwarded)
     }
 
     suspend fun setDisplayName(name: String) {
@@ -349,9 +349,9 @@ class MeshService : LifecycleService(), RouterListener {
         router.setDisplayName(name)
     }
 
-    private suspend fun persistOutgoing(id: ByteArray, conversation: String, text: String, status: MessageStatus) {
+    private suspend fun persistOutgoing(id: ByteArray, conversation: String, text: String, status: MessageStatus, isForwarded: Boolean = false) {
         withContext(Dispatchers.IO) {
-            db.messages().upsert(MessageEntity(id.toHex(), conversation, router.selfId.hex, router.displayName, text, System.currentTimeMillis(), true, status, true))
+            db.messages().upsert(MessageEntity(id.toHex(), conversation, router.selfId.hex, router.displayName, text, System.currentTimeMillis(), true, status, true, isForwarded = isForwarded))
         }
         persistRelayStore()
     }
