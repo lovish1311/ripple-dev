@@ -910,7 +910,42 @@ private struct VoiceMessageBubble: View {
     }
 }
 
-// MARK: - Delivery Status Icon (Matches Android DeliveryStatusIcon: Pending Clock, Single Check, Double Check, Blue Ticks)
+// MARK: - WhatsApp / Material Vector Checkmarks
+struct SingleCheckIcon: View {
+    let color: Color
+
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 1.5, y: 6.5))
+            path.addLine(to: CGPoint(x: 5.5, y: 10.5))
+            path.addLine(to: CGPoint(x: 12.5, y: 2.5))
+        }
+        .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        .frame(width: 14, height: 12)
+    }
+}
+
+struct DoneAllIcon: View {
+    let color: Color
+
+    var body: some View {
+        Path { path in
+            // First checkmark (left tick)
+            path.move(to: CGPoint(x: 1.5, y: 7.5))
+            path.addLine(to: CGPoint(x: 5.5, y: 11.5))
+            path.addLine(to: CGPoint(x: 11.5, y: 3.5))
+
+            // Second checkmark (right tick)
+            path.move(to: CGPoint(x: 6.5, y: 7.5))
+            path.addLine(to: CGPoint(x: 9.5, y: 10.5))
+            path.addLine(to: CGPoint(x: 15.5, y: 2.5))
+        }
+        .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        .frame(width: 17, height: 13)
+    }
+}
+
+// MARK: - Delivery Status Icon (Matches Android / WhatsApp Ticks)
 struct DeliveryStatusIcon: View {
     let status: MessageStatus
 
@@ -921,25 +956,11 @@ struct DeliveryStatusIcon: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888
         case .sent:
-            Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 single check
+            SingleCheckIcon(color: Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 single check
         case .delivered:
-            HStack(spacing: -5) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 double check
+            DoneAllIcon(color: Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 double check
         case .read:
-            HStack(spacing: -5) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-            }
-            .foregroundStyle(Color(red: 0.20, green: 0.72, blue: 0.95)) // #34B7F1 Android status_read blue ticks
+            DoneAllIcon(color: Color(red: 0.20, green: 0.72, blue: 0.95)) // #34B7F1 WhatsApp/Android blue tick
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 11))
