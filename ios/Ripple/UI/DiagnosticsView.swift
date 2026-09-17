@@ -23,6 +23,23 @@ struct DiagnosticsView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+
+                Button {
+                    mesh.simulateIncomingSos()
+                } label: {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text("🚨 Simulate Incoming SOS (Asha)")
+                            .fontWeight(.bold)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.red, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 4)
             }
 
             if !links.isEmpty {

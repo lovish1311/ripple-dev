@@ -769,7 +769,7 @@ private struct VoiceMessageBubble: View {
                                 .foregroundStyle(mine ? Color.white : Color.primary)
 
                             // Opus 8kbps tag
-                            Text("Opus")
+                            Text("OPUS 8kbps")
                                 .font(.system(size: 8, weight: .heavy))
                                 .foregroundStyle(mine ? Color.white.opacity(0.85) : Color.secondary)
                                 .padding(.horizontal, 4)

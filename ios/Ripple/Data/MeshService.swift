@@ -468,4 +468,48 @@ final class MeshService: ObservableObject, RouterListener {
         content.userInfo = ["conversation": m.conversation]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: m.messageId, content: content, trigger: nil))
     }
+
+    /// Simulates an incoming emergency SOS broadcast from a peer (for diagnostics, field testing, and UI verification).
+    func simulateIncomingSos(
+        fromName: String = "Asha",
+        fromNodeId: String = "1e61a2b3c4d5e6f7",
+        text: String = "Injured hiker with severe ankle sprain near North Trail marker 4. Need first aid kit & water.",
+        lat: Double = 37.7749,
+        lng: Double = -122.4194,
+        voiceDurationMs: Int = 4000
+    ) {
+        let ctx = container.mainContext
+        let msgId = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
+        let sos = SosRecord(
+            messageId: String(msgId),
+            fromNodeId: fromNodeId,
+            fromName: fromName,
+            text: text,
+            latE7: Int32(lat * 1e7),
+            lngE7: Int32(lng * 1e7),
+            accuracyMeters: 15,
+            verified: true,
+            timestamp: Date(),
+            status: .active,
+            voiceBytes: nil,
+            voiceDurationMs: voiceDurationMs
+        )
+        ctx.insert(sos)
+
+        let msg = MessageRecord(
+            messageId: String(msgId),
+            conversation: Persistence.broadcastConversation,
+            fromNodeId: fromNodeId,
+            fromName: fromName,
+            text: text,
+            timestamp: Date(),
+            outgoing: false,
+            status: .received,
+            verified: true,
+            voiceBytes: nil,
+            voiceDurationMs: voiceDurationMs
+        )
+        ctx.insert(msg)
+        try? ctx.save()
+    }
 }

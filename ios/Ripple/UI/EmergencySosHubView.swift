@@ -58,7 +58,16 @@ struct EmergencySosHubView: View {
                                 },
                                 onResolve: {
                                     mesh.resolveSos(beaconId: record.messageId)
-                                }
+                                },
+                                onOpenThread: {
+                                    audioPlayer.stop()
+                                    dismiss()
+                                    AppDelegate.openConversation?(Persistence.broadcastConversation)
+                                },
+                                onDelete: record.status != .active ? {
+                                    mesh.container.mainContext.delete(record)
+                                    try? mesh.container.mainContext.save()
+                                } : nil
                             )
                             .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
                             .listRowSeparator(.hidden)
@@ -123,6 +132,8 @@ struct SosIncidentCard: View {
     let onPlayVoice: () -> Void
     let onAcknowledge: () -> Void
     let onResolve: () -> Void
+    var onOpenThread: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -163,22 +174,22 @@ struct SosIncidentCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Incident Distress Message
+            // Distress Note Body
             Text(record.text)
-                .font(.system(size: 14, weight: .medium))
+                .font(.subheadline)
                 .foregroundStyle(.primary)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
 
-            // Attached Voice Memo
+            // Attached Voice Memo Player
             if record.hasVoice {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Button(action: onPlayVoice) {
                         ZStack {
-                            Circle().fill(Color.red.opacity(0.15)).frame(width: 36, height: 36)
+                            Circle().fill(Color.red.opacity(0.12)).frame(width: 36, height: 36)
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(Color.red)
                                 .offset(x: isPlaying ? 0 : 1)
                         }
@@ -186,7 +197,7 @@ struct SosIncidentCard: View {
                     .buttonStyle(.plain)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Emergency Voice Memo")
+                        Text("🚨 Emergency Voice Memo")
                             .font(.caption.bold())
                             .foregroundStyle(Color.red)
                         let sec = max(1, (record.voiceDurationMs ?? 4000) / 1000)
@@ -241,11 +252,26 @@ struct SosIncidentCard: View {
             Divider().padding(.vertical, 2)
 
             // Action Buttons
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 if record.status == .active {
+                    if let onOpen = onOpenThread {
+                        Button(action: onOpen) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bubble.left.fill")
+                                Text("Open Thread")
+                            }
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     Button(action: onAcknowledge) {
-                        Label("Acknowledge (ACK)", systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 13, weight: .bold))
+                        Label("ACK", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
@@ -254,10 +280,10 @@ struct SosIncidentCard: View {
                     .buttonStyle(.plain)
 
                     Button(action: onResolve) {
-                        Label("Resolve", systemImage: "archivebox.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                        Text("Resolve")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.secondary)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
                     }
@@ -266,27 +292,68 @@ struct SosIncidentCard: View {
                     HStack {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(Color.green)
-                        Text("Rescue Dispatched & ACK Delivered")
+                        Text("ACK Delivered")
                             .font(.caption.bold())
                             .foregroundStyle(Color.green)
                     }
                     Spacer()
+                    if let onOpen = onOpenThread {
+                        Button(action: onOpen) {
+                            Text("Open Thread")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
                     Button(action: onResolve) {
-                        Label("Mark Resolved", systemImage: "checkmark.circle")
+                        Label("Resolve", systemImage: "checkmark.circle")
                             .font(.caption.bold())
                             .foregroundStyle(Color.secondary)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 8)
                             .padding(.vertical, 6)
                             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
+                    if let onDel = onDelete {
+                        Button(action: onDel) {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                                .foregroundStyle(Color.red)
+                                .padding(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 } else {
                     HStack {
                         Image(systemName: "archivebox.fill")
                             .foregroundStyle(.secondary)
-                        Text("Incident Resolved & Archived")
+                        Text("Incident Resolved")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let onOpen = onOpenThread {
+                        Button(action: onOpen) {
+                            Text("Open Thread")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if let onDel = onDelete {
+                        Button(action: onDel) {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                                .foregroundStyle(Color.red)
+                                .padding(6)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
