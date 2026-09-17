@@ -73,6 +73,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         CrashLog.install()
         UNUserNotificationCenter.current().delegate = self
+        if CommandLine.arguments.contains("-openTablet") {
+            Self.pendingConversation = "2afdbdcccf2360af"
+        }
         return true
     }
 

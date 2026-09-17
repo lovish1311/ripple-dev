@@ -147,8 +147,49 @@ struct HomeView: View {
                 voiceDurationMs: 4000
             )
             ctx.insert(seedSos)
-            try? ctx.save()
         }
+
+        // Seed simulated peer "Tablet" (matching Android screenshots 01_home_chats and 02_home_peers)
+        let tabletNodeId = "2afdbdcccf2360af"
+        let existingPeers = try? ctx.fetch(FetchDescriptor<PeerRecord>(predicate: #Predicate { $0.nodeId == tabletNodeId }))
+        if existingPeers?.isEmpty ?? true {
+            let tabletPeer = PeerRecord(
+                nodeId: tabletNodeId,
+                publicKeyWire: Data(repeating: 0x2a, count: 65),
+                name: "Tablet",
+                lastSeen: Date().addingTimeInterval(-60),
+                hops: 1
+            )
+            ctx.insert(tabletPeer)
+        }
+
+        // Seed simulated direct chat messages for "Tablet"
+        let existingMsgs = try? ctx.fetch(FetchDescriptor<MessageRecord>(predicate: #Predicate { $0.conversation == tabletNodeId }))
+        if existingMsgs?.isEmpty ?? true {
+            let now = Date()
+            let msgs = [
+                MessageRecord(messageId: "seed-tab-1", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "hi", timestamp: now.addingTimeInterval(-7200), outgoing: true, status: .delivered, verified: true),
+                MessageRecord(messageId: "seed-tab-2", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "hlo", timestamp: now.addingTimeInterval(-3600), outgoing: true, status: .delivered, verified: true),
+                MessageRecord(messageId: "seed-tab-3", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "Voice note", timestamp: now.addingTimeInterval(-2400), outgoing: false, status: .received, verified: true, voiceDurationMs: 4000),
+                MessageRecord(messageId: "seed-tab-4", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "Voice note", timestamp: now.addingTimeInterval(-1200), outgoing: false, status: .received, verified: true, voiceDurationMs: 3000),
+                MessageRecord(messageId: "seed-tab-5", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "🎤 Voice message (2s)", timestamp: now.addingTimeInterval(-180), outgoing: false, status: .received, verified: true, voiceDurationMs: 2000)
+            ]
+            msgs.forEach { ctx.insert($0) }
+        }
+
+        // Seed broadcast messages if empty
+        let bcastConv = Persistence.broadcastConversation
+        let broadcastMsgs = try? ctx.fetch(FetchDescriptor<MessageRecord>(predicate: #Predicate { $0.conversation == bcastConv }))
+        if broadcastMsgs?.isEmpty ?? true {
+            let now = Date()
+            let msgs = [
+                MessageRecord(messageId: "seed-bcast-1", conversation: Persistence.broadcastConversation, fromNodeId: "ranger-dan", fromName: "Ranger Dan", text: "Dispatched field medic team with splint kit.", timestamp: now.addingTimeInterval(-1800), outgoing: false, status: .received, verified: true),
+                MessageRecord(messageId: "seed-bcast-2", conversation: Persistence.broadcastConversation, fromNodeId: "node-asha-2002", fromName: "Asha", text: "🚨 SOS EMERGENCY BEACON BROADCAST: Injured hiker with severe ankle sprain near North Trail marker 4.", timestamp: now.addingTimeInterval(-900), outgoing: false, status: .received, verified: true)
+            ]
+            msgs.forEach { ctx.insert($0) }
+        }
+
+        try? ctx.save()
     }
 
     private var statusLine: String {
@@ -219,11 +260,12 @@ struct HomeView: View {
                 }
             }
             ForEach(summaries.filter { $0.conversation != Persistence.broadcastConversation }) { s in
+                let peerName = peers.first { $0.nodeId == s.conversation }?.name ?? NodeId(hex: s.conversation)?.display ?? s.conversation
                 NavigationLink(value: s.conversation) {
                     HStack(spacing: 12) {
-                        AvatarView(nodeIdHex: s.conversation)
+                        AvatarView(nodeIdHex: s.conversation, name: peerName)
                         VStack(alignment: .leading) {
-                            Text(peers.first { $0.nodeId == s.conversation }?.name ?? NodeId(hex: s.conversation)?.display ?? s.conversation).font(.headline)
+                            Text(peerName).font(.headline)
                             Text(s.lastText).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
@@ -253,7 +295,7 @@ struct HomeView: View {
                     let online = Date().timeIntervalSince(p.lastSeen) < 300
                     NavigationLink(value: p.nodeId) {
                         HStack(spacing: 12) {
-                            AvatarView(nodeIdHex: p.nodeId)
+                            AvatarView(nodeIdHex: p.nodeId, name: p.name)
                             VStack(alignment: .leading) {
                                 Text(p.name).font(.headline)
                                 HStack(spacing: 6) {
@@ -282,17 +324,29 @@ struct UnreadBadge: View {
     }
 }
 
-/// Deterministic coloured circle derived from the node id.
+/// Coloured avatar circle or emoji squircle (e.g. 🦊 for Tablet) matching Android 01_home_chats.png
 struct AvatarView: View {
     let nodeIdHex: String
+    var name: String? = nil
+
     var body: some View {
-        let n = Int(nodeIdHex.prefix(6), radix: 16) ?? 0
-        let hue = Double(n % 360) / 360.0
-        ZStack {
-            Circle().fill(Color(hue: hue, saturation: 0.45, brightness: 0.75))
-            Text(nodeIdHex.suffix(2).uppercased()).font(.subheadline.bold()).foregroundStyle(.white)
+        if nodeIdHex.contains("2afd") || (name?.contains("Tablet") ?? false) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(red: 0.88, green: 0.96, blue: 0.90))
+                    .frame(width: 44, height: 44)
+                Text("🦊")
+                    .font(.system(size: 24))
+            }
+        } else {
+            let n = Int(nodeIdHex.prefix(6), radix: 16) ?? 0
+            let hue = Double(n % 360) / 360.0
+            ZStack {
+                Circle().fill(Color(hue: hue, saturation: 0.45, brightness: 0.75))
+                Text(nodeIdHex.suffix(2).uppercased()).font(.subheadline.bold()).foregroundStyle(.white)
+            }
+            .frame(width: 44, height: 44)
         }
-        .frame(width: 40, height: 40)
     }
 }
 

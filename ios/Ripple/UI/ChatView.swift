@@ -19,6 +19,9 @@ struct ChatView: View {
     @State private var replyingTo: MessageRecord? = nil
     @State private var editingMessage: MessageRecord? = nil
     @State private var toastMessage: String? = nil
+    @State private var selectedMessageForAction: MessageRecord? = nil
+    @State private var forwardingMessage: MessageRecord? = nil
+    @Query(sort: \PeerRecord.name) private var allPeers: [PeerRecord]
 
     private var isBroadcast: Bool { conversation == Persistence.broadcastConversation }
 
@@ -35,49 +38,61 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             ForEach(messages) { m in
-                                Group {
-                                    if isEmergencySos(m) {
-                                        SosEmergencyMessageCard(message: m)
-                                    } else if isVoiceMessage(m) {
-                                        VoiceMessageBubble(message: m, showSender: isBroadcast)
-                                    } else {
-                                        MessageBubble(message: m, showSender: isBroadcast)
+                                SwipeToReplyContainer(
+                                    isOutgoing: m.outgoing,
+                                    onReply: {
+                                        handleReply(m)
+                                    }
+                                ) {
+                                    Group {
+                                        if isEmergencySos(m) {
+                                            SosEmergencyMessageCard(message: m)
+                                        } else if isVoiceMessage(m) {
+                                            VoiceMessageBubble(message: m, showSender: isBroadcast)
+                                        } else {
+                                            MessageBubble(message: m, showSender: isBroadcast)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                    .onLongPressGesture {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        selectedMessageForAction = m
+                                    }
+                                    .contextMenu {
+                                        Button {
+                                            handleReply(m)
+                                        } label: {
+                                            Label("Reply", systemImage: "arrowshape.turn.up.left")
+                                        }
+
+                                        Button {
+                                            handleCopy(m)
+                                        } label: {
+                                            Label("Copy Text", systemImage: "doc.on.doc")
+                                        }
+
+                                        if m.outgoing {
+                                            Button {
+                                                handleEdit(m)
+                                            } label: {
+                                                Label("Edit Message", systemImage: "pencil")
+                                            }
+                                        }
+
+                                        Button {
+                                            handleForward(m)
+                                        } label: {
+                                            Label("Forward", systemImage: "arrowshape.turn.up.right")
+                                        }
+
+                                        Button(role: .destructive) {
+                                            handleDelete(m)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
                                 }
                                 .id(m.messageId)
-                                .contextMenu {
-                                    Button {
-                                        handleReply(m)
-                                    } label: {
-                                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                                    }
-
-                                    Button {
-                                        handleCopy(m)
-                                    } label: {
-                                        Label("Copy Text", systemImage: "doc.on.doc")
-                                    }
-
-                                    if m.outgoing {
-                                        Button {
-                                            handleEdit(m)
-                                        } label: {
-                                            Label("Edit Message", systemImage: "pencil")
-                                        }
-                                    }
-
-                                    Button {
-                                        handleForward(m)
-                                    } label: {
-                                        Label("Forward", systemImage: "arrowshape.turn.up.right")
-                                    }
-
-                                    Button(role: .destructive) {
-                                        handleDelete(m)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
                             }
                         }
                         .padding(12)
@@ -194,6 +209,55 @@ struct ChatView: View {
             mesh.visibleConversation = conversation
             mesh.markRead(conversation)
             seedSampleMessagesIfNeeded()
+            if CommandLine.arguments.contains("-testActionSheet") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if let target = messages.first(where: { !$0.outgoing }) ?? messages.last {
+                        selectedMessageForAction = target
+                    }
+                }
+            } else if CommandLine.arguments.contains("-testReply") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if let target = messages.last {
+                        handleReply(target)
+                    }
+                }
+            }
+        }
+        .sheet(item: $selectedMessageForAction) { m in
+            MessageActionSheet(
+                message: m,
+                onReply: {
+                    handleReply(m)
+                },
+                onCopy: {
+                    handleCopy(m)
+                },
+                onEdit: {
+                    handleEdit(m)
+                },
+                onForward: {
+                    forwardingMessage = m
+                },
+                onDelete: {
+                    handleDelete(m)
+                }
+            )
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $forwardingMessage) { m in
+            ForwardMessageSheet(
+                message: m,
+                peers: allPeers,
+                currentConversation: conversation,
+                onForwardTo: { targetConversation, targetName in
+                    forwardingMessage = nil
+                    mesh.send(conversation: targetConversation, text: "Fwd: \(m.text)")
+                    showToast("Forwarded to \(targetName)")
+                }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .onDisappear {
             cancelRecording()
@@ -320,8 +384,7 @@ struct ChatView: View {
     }
 
     private func handleForward(_ m: MessageRecord) {
-        mesh.send(conversation: conversation, text: "Fwd: \(m.text)")
-        showToast("Forwarded to mesh")
+        forwardingMessage = m
     }
 
     private func handleDelete(_ m: MessageRecord) {
@@ -894,3 +957,249 @@ private struct MessageBubble: View {
         }
     }
 }
+
+// MARK: - Swipe To Reply Container (Matches Android SwipeToReplyContainer)
+struct SwipeToReplyContainer<Content: View>: View {
+    let isOutgoing: Bool
+    let onReply: () -> Void
+    let content: () -> Content
+
+    @State private var dragOffset: CGFloat = 0
+    @State private var hasTriggeredHaptic: Bool = false
+
+    private let maxDrag: CGFloat = 80
+    private let triggerThreshold: CGFloat = 48
+
+    init(isOutgoing: Bool, onReply: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
+        self.isOutgoing = isOutgoing
+        self.onReply = onReply
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack(alignment: isOutgoing ? .trailing : .leading) {
+            // Reply indicator icon behind the message bubble
+            let progress = min(1.0, abs(dragOffset) / triggerThreshold)
+            if progress > 0.05 {
+                let isTriggered = abs(dragOffset) >= triggerThreshold
+                ZStack {
+                    Circle()
+                        .fill(isTriggered ? Color.accentColor : Color(.secondarySystemBackground))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "arrowshape.turn.up.left.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isTriggered ? Color.white : Color.secondary)
+                }
+                .scaleEffect(0.6 + 0.4 * progress)
+                .opacity(min(1.0, progress * 1.5))
+                .padding(.horizontal, 16)
+            }
+
+            // Message Bubble with horizontal swipe translation
+            content()
+                .offset(x: dragOffset)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                        .onChanged { value in
+                            let translation = value.translation.width
+                            if isOutgoing {
+                                // Slide left for sent messages
+                                if translation < 0 {
+                                    dragOffset = max(-maxDrag, translation)
+                                    let triggered = abs(dragOffset) >= triggerThreshold
+                                    if triggered && !hasTriggeredHaptic {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        hasTriggeredHaptic = true
+                                    } else if !triggered && hasTriggeredHaptic {
+                                        hasTriggeredHaptic = false
+                                    }
+                                }
+                            } else {
+                                // Slide right for received messages
+                                if translation > 0 {
+                                    dragOffset = min(maxDrag, translation)
+                                    let triggered = abs(dragOffset) >= triggerThreshold
+                                    if triggered && !hasTriggeredHaptic {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        hasTriggeredHaptic = true
+                                    } else if !triggered && hasTriggeredHaptic {
+                                        hasTriggeredHaptic = false
+                                    }
+                                }
+                            }
+                        }
+                        .onEnded { _ in
+                            let triggered = abs(dragOffset) >= triggerThreshold
+                            if triggered {
+                                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                                onReply()
+                            }
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                dragOffset = 0
+                            }
+                            hasTriggeredHaptic = false
+                        }
+                )
+        }
+    }
+}
+
+// MARK: - Message Action Sheet (Matches Android MessageActionBottomSheet)
+struct MessageActionSheet: View {
+    let message: MessageRecord
+    let onReply: () -> Void
+    let onCopy: () -> Void
+    let onEdit: () -> Void
+    let onForward: () -> Void
+    let onDelete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Snippet Preview
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(message.outgoing ? "You" : (message.fromName ?? "Peer"))
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.accentColor)
+                    Spacer()
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text(message.isVoice ? "🎤 Voice Note (\(max(1, (message.voiceDurationMs ?? 2000)/1000))s)" : message.text)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+
+            Divider()
+                .padding(.horizontal, 16)
+
+            // Action Items
+            VStack(spacing: 4) {
+                actionRow(title: "Reply", icon: "arrowshape.turn.up.left.fill", color: Color.purple) {
+                    dismiss()
+                    onReply()
+                }
+                if !message.isVoice {
+                    actionRow(title: "Copy Text", icon: "doc.on.doc.fill", color: Color.blue) {
+                        dismiss()
+                        onCopy()
+                    }
+                }
+                if message.outgoing && !message.isVoice {
+                    actionRow(title: "Edit Message", icon: "pencil", color: Color.orange) {
+                        dismiss()
+                        onEdit()
+                    }
+                }
+                actionRow(title: "Forward", icon: "arrowshape.turn.up.right.fill", color: Color.teal) {
+                    dismiss()
+                    onForward()
+                }
+                actionRow(title: "Delete", icon: "trash.fill", color: Color.red, isDestructive: true) {
+                    dismiss()
+                    onDelete()
+                }
+            }
+            .padding(.horizontal, 16)
+
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+
+    private func actionRow(title: String, icon: String, color: Color, isDestructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(color)
+                }
+                Text(title)
+                    .font(.system(size: 15, weight: isDestructive ? .bold : .medium))
+                    .foregroundStyle(isDestructive ? Color.red : Color.primary)
+                Spacer()
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Forward Message Sheet (Matches Android ForwardBottomSheet)
+struct ForwardMessageSheet: View {
+    let message: MessageRecord
+    let peers: [PeerRecord]
+    let currentConversation: String
+    let onForwardTo: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Broadcast Channel") {
+                    Button {
+                        onForwardTo(Persistence.broadcastConversation, "Everyone nearby")
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(Color.purple.opacity(0.15)).frame(width: 38, height: 38)
+                                Image(systemName: "megaphone.fill").foregroundStyle(Color.purple)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Everyone nearby").font(.headline).foregroundStyle(.primary)
+                                Text("Public mesh broadcast").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "arrowshape.turn.up.right").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if !peers.isEmpty {
+                    Section("Direct Peer Conversations") {
+                        ForEach(peers) { p in
+                            Button {
+                                onForwardTo(p.nodeId, p.name)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    AvatarView(nodeIdHex: p.nodeId, name: p.name)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(p.name).font(.headline).foregroundStyle(.primary)
+                                        Text(NodeId(hex: p.nodeId)?.display ?? p.nodeId).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrowshape.turn.up.right").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Forward to...")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
