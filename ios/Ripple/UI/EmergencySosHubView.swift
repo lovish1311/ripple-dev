@@ -102,13 +102,14 @@ struct EmergencySosHubView: View {
     }
 
     private func handleToggleVoice(_ record: SosRecord) {
-        guard let voice = record.voiceBytes, !voice.isEmpty else { return }
+        let sec = max(1, (record.voiceDurationMs ?? 4000) / 1000)
         if playingBeaconId == record.messageId && audioPlayer.isPlaying {
-            audioPlayer.stop()
-            playingBeaconId = nil
+            audioPlayer.pause()
+        } else if playingBeaconId == record.messageId && audioPlayer.currentTime > 0 {
+            audioPlayer.resume()
         } else {
             playingBeaconId = record.messageId
-            audioPlayer.play(data: voice) {
+            audioPlayer.play(data: record.voiceBytes, defaultDuration: Double(sec)) {
                 playingBeaconId = nil
             }
         }
@@ -177,8 +178,9 @@ struct SosIncidentCard: View {
                         ZStack {
                             Circle().fill(Color.red.opacity(0.15)).frame(width: 36, height: 36)
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Color.red)
+                                .offset(x: isPlaying ? 0 : 1)
                         }
                     }
                     .buttonStyle(.plain)
@@ -188,20 +190,20 @@ struct SosIncidentCard: View {
                             .font(.caption.bold())
                             .foregroundStyle(Color.red)
                         let sec = max(1, (record.voiceDurationMs ?? 4000) / 1000)
-                        Text(isPlaying ? "Playing memo..." : "0:0\(sec) · Opus 8kbps speech")
+                        Text(isPlaying ? "Playing voice memo..." : "0:0\(sec) · Opus 8kbps speech")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
-                    // Waveform equalizer bars
+                    // Waveform equalizer bars with live animated pulsing
                     HStack(spacing: 2.5) {
-                        ForEach(0..<6) { i in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(isPlaying ? Color.red : Color.red.opacity(0.35))
-                                .frame(width: 3, height: isPlaying ? CGFloat([8, 16, 12, 20, 10, 15][i]) : 8)
-                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.05), value: isPlaying)
+                        ForEach(0..<10) { i in
+                            RoundedRectangle(cornerRadius: 1.25)
+                                .fill(isPlaying ? Color.red : Color.red.opacity(0.3))
+                                .frame(width: 2.5, height: isPlaying ? CGFloat([8, 16, 12, 20, 10, 15, 18, 11, 14, 9][i]) : CGFloat([6, 11, 8, 14, 7, 10, 12, 8, 10, 6][i]))
+                                .animation(.easeInOut(duration: 0.15), value: isPlaying)
                         }
                     }
                     .frame(height: 22)

@@ -348,30 +348,27 @@ struct PinnedHomeSosCard: View {
                 .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
 
             // Attached Voice Memo
-            if let voice = record.voiceBytes, !voice.isEmpty {
+            if record.hasVoice {
                 HStack(spacing: 10) {
+                    let sec = max(1, (record.voiceDurationMs ?? 4000) / 1000)
                     Button {
-                        if audioPlayer.isPlaying {
-                            audioPlayer.stop()
-                        } else {
-                            audioPlayer.play(data: voice)
-                        }
+                        audioPlayer.togglePlay(data: record.voiceBytes, defaultDuration: Double(sec))
                     } label: {
                         ZStack {
-                            Circle().fill(Color.red.opacity(0.15)).frame(width: 32, height: 32)
+                            Circle().fill(Color.red.opacity(0.12)).frame(width: 32, height: 32)
                             Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Color.red)
+                                .offset(x: audioPlayer.isPlaying ? 0 : 1)
                         }
                     }
                     .buttonStyle(.plain)
 
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Emergency Voice Memo")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.red)
-                        let sec = max(1, (record.voiceDurationMs ?? 4000) / 1000)
-                        Text(audioPlayer.isPlaying ? "Playing voice memo..." : "0:0\(sec) · Opus 8kbps audio")
+                        Text(audioPlayer.isPlaying ? String(format: "Playing · 0:%02d", Int(audioPlayer.currentTime)) : "\(sec)s · Opus 8kbps emergency audio")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
@@ -379,17 +376,19 @@ struct PinnedHomeSosCard: View {
                     Spacer()
 
                     HStack(spacing: 2) {
-                        ForEach(0..<6) { i in
+                        ForEach(0..<10) { i in
+                            let barProgress = Double(i) / 10.0
+                            let isPlayed = barProgress <= audioPlayer.progress
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(audioPlayer.isPlaying ? Color.red : Color.red.opacity(0.35))
-                                .frame(width: 2.5, height: audioPlayer.isPlaying ? CGFloat([8, 14, 11, 17, 9, 13][i]) : 7)
-                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.05), value: audioPlayer.isPlaying)
+                                .fill(isPlayed ? Color.red : Color.red.opacity(0.3))
+                                .frame(width: 2.5, height: audioPlayer.isPlaying && isPlayed ? CGFloat([8, 14, 11, 17, 9, 13, 16, 10, 14, 8][i]) : CGFloat([6, 11, 8, 13, 7, 10, 12, 8, 11, 6][i]))
+                                .animation(.easeInOut(duration: 0.15), value: audioPlayer.isPlaying)
                         }
                     }
                     .frame(height: 18)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.vertical, 7)
                 .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 

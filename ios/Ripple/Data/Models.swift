@@ -31,7 +31,7 @@ final class MessageRecord {
     }
 
     var isVoice: Bool {
-        voiceBytes != nil && !(voiceBytes?.isEmpty ?? true)
+        (voiceBytes != nil && !(voiceBytes?.isEmpty ?? true)) || (voiceDurationMs ?? 0) > 0 || text.contains("Voice Note") || text.contains("Voice Memo") || text.contains("🎤")
     }
 
     init(messageId: String, conversation: String, fromNodeId: String, fromName: String?, text: String,

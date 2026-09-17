@@ -343,7 +343,7 @@ struct ChatView: View {
     }
 
     private func isVoiceMessage(_ m: MessageRecord) -> Bool {
-        m.text.contains("Voice Note") || m.text.contains("🎤") || m.text.contains("[VOICE_NOTE")
+        m.isVoice || m.voiceBytes != nil || (m.voiceDurationMs ?? 0) > 0 || m.text.contains("Voice Note") || m.text.contains("Voice Memo") || m.text.contains("🎤")
     }
 
     private func startRecording() {
@@ -419,7 +419,8 @@ struct ChatView: View {
                 timestamp: Date().addingTimeInterval(-900),
                 outgoing: false,
                 status: .received,
-                verified: true
+                verified: true,
+                voiceDurationMs: 4000
             )
             let m4 = MessageRecord(
                 messageId: "seed-4",
@@ -429,8 +430,9 @@ struct ChatView: View {
                 text: "🎤 Voice Note (0:04)",
                 timestamp: Date().addingTimeInterval(-450),
                 outgoing: true,
-                status: .sent,
-                verified: true
+                status: .delivered,
+                verified: true,
+                voiceDurationMs: 4000
             )
             let m5 = MessageRecord(
                 messageId: "seed-5",
@@ -582,39 +584,42 @@ private struct SosEmergencyMessageCard: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .stroke(Color.red.opacity(0.4), lineWidth: 1.2)
-                                .frame(width: 30, height: 30)
+                                .fill(Color.red.opacity(0.12))
+                                .frame(width: 32, height: 32)
                             Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Color.red)
+                                .offset(x: audioPlayer.isPlaying ? 0 : 1)
                         }
                     }
                     .buttonStyle(.plain)
 
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Emergency Voice Memo")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.red)
                         let sec = max(1, (message.voiceDurationMs ?? 4000) / 1000)
-                        Text(audioPlayer.isPlaying ? "Playing · \(sec)s Opus memo" : "\(sec)s · Opus 8kbps emergency audio")
+                        Text(audioPlayer.isPlaying ? String(format: "Playing · 0:%02d", Int(audioPlayer.currentTime)) : "\(sec)s · Opus 8kbps emergency audio")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
 
-                    // Mini active waveform
+                    // Mini active waveform with progress
                     HStack(spacing: 2) {
-                        ForEach(0..<6) { i in
+                        ForEach(0..<10) { i in
+                            let barProgress = Double(i) / 10.0
+                            let isPlayed = barProgress <= audioPlayer.progress
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(audioPlayer.isPlaying ? Color.red : Color.red.opacity(0.35))
-                                .frame(width: 2.5, height: audioPlayer.isPlaying ? CGFloat([9, 15, 12, 18, 10, 14][i]) : 7)
-                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.05), value: audioPlayer.isPlaying)
+                                .fill(isPlayed ? Color.red : Color.red.opacity(0.3))
+                                .frame(width: 2.5, height: audioPlayer.isPlaying && isPlayed ? CGFloat([9, 15, 12, 18, 10, 14, 16, 12, 15, 10][i]) : CGFloat([7, 12, 9, 14, 8, 11, 13, 10, 12, 8][i]))
+                                .animation(.easeInOut(duration: 0.15), value: audioPlayer.isPlaying)
                         }
                     }
                     .frame(height: 20)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.vertical, 7)
                 .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 
@@ -663,11 +668,8 @@ private struct SosEmergencyMessageCard: View {
     }
 
     private func togglePlayback() {
-        if audioPlayer.isPlaying {
-            audioPlayer.stop()
-        } else if let voice = message.voiceBytes, !voice.isEmpty {
-            audioPlayer.play(data: voice)
-        }
+        let sec = max(1.0, Double((message.voiceDurationMs ?? 4000) / 1000))
+        audioPlayer.togglePlay(data: message.voiceBytes, defaultDuration: sec)
     }
 }
 
@@ -677,82 +679,133 @@ private struct VoiceMessageBubble: View {
     let showSender: Bool
     @StateObject private var player = OpusAudioPlayer()
 
+    // 26 bars matching realistic conversational speech cadence
+    private static let wavePattern: [CGFloat] = [
+        6, 12, 18, 10, 15, 22, 14, 20, 12, 16,
+        22, 10, 14, 20, 16, 10, 22, 14, 8, 16,
+        12, 18, 14, 8, 12, 6
+    ]
+
+    private var totalDurationSec: Double {
+        Double(max(1, (message.voiceDurationMs ?? 4000) / 1000))
+    }
+
     var body: some View {
         let mine = message.outgoing
-        HStack {
-            if mine { Spacer(minLength: 50) }
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 0) {
+            if mine { Spacer(minLength: 40) }
+
+            VStack(alignment: .leading, spacing: 5) {
                 if showSender && !mine {
                     Text(message.fromName ?? NodeId(hex: message.fromNodeId)?.display ?? message.fromNodeId)
                         .font(.caption.bold())
                         .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 2)
                 }
 
-                HStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    // Play / Pause Circular Button
                     Button {
-                        togglePlay()
+                        player.togglePlay(data: message.voiceBytes, defaultDuration: totalDurationSec)
                     } label: {
                         ZStack {
                             Circle()
                                 .fill(mine ? Color.white : Color.accentColor)
-                                .frame(width: 36, height: 36)
+                                .frame(width: 38, height: 38)
+                                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 14, weight: .black))
                                 .foregroundStyle(mine ? Color.accentColor : Color.white)
+                                .offset(x: player.isPlaying ? 0 : 1)
                         }
                     }
                     .buttonStyle(.plain)
 
-                    // Audio waveform bars
-                    HStack(spacing: 3) {
-                        ForEach(0..<10) { i in
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(mine ? Color.white.opacity(0.85) : Color.primary.opacity(0.65))
-                                .frame(width: 3, height: player.isPlaying ? CGFloat([8, 18, 12, 22, 16, 20, 14, 24, 10, 16][i]) : CGFloat([6, 12, 8, 16, 10, 14, 8, 18, 6, 10][i]))
-                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.04), value: player.isPlaying)
+                    // Audio Waveform & Status Info
+                    VStack(alignment: .leading, spacing: 5) {
+                        // Waveform with dynamic progress fill and drag-to-seek
+                        GeometryReader { geo in
+                            let totalBars = Self.wavePattern.count
+                            let barWidth: CGFloat = 2.5
+                            let availableWidth = geo.size.width
+                            let spacing = max(1.5, (availableWidth - (CGFloat(totalBars) * barWidth)) / CGFloat(totalBars - 1))
+
+                            HStack(alignment: .center, spacing: spacing) {
+                                ForEach(0..<totalBars, id: \.self) { i in
+                                    let barFraction = Double(i) / Double(totalBars)
+                                    let isPlayed = barFraction <= player.progress
+                                    let baseHeight = Self.wavePattern[i]
+                                    let activeHeight = player.isPlaying && isPlayed ? min(22, baseHeight * 1.25) : baseHeight
+
+                                    RoundedRectangle(cornerRadius: 1.25)
+                                        .fill(
+                                            mine
+                                                ? (isPlayed ? Color.white : Color.white.opacity(0.35))
+                                                : (isPlayed ? Color.accentColor : Color.primary.opacity(0.25))
+                                        )
+                                        .frame(width: barWidth, height: activeHeight)
+                                        .animation(.easeInOut(duration: 0.15), value: player.isPlaying)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        let fraction = max(0.0, min(1.0, value.location.x / geo.size.width))
+                                        player.seek(to: fraction)
+                                    }
+                            )
                         }
-                    }
-                    .frame(height: 24)
+                        .frame(height: 22)
 
-                    VStack(alignment: .trailing, spacing: 1) {
-                        let sec = max(1, (message.voiceDurationMs ?? 4000) / 1000)
-                        Text(player.isPlaying ? String(format: "0:%02d", Int(player.currentTime.rounded())) : "0:0\(sec)")
-                            .font(.caption.monospacedDigit().bold())
-                            .foregroundStyle(mine ? Color.white : Color.primary)
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(mine ? Color.white.opacity(0.7) : Color.secondary)
-                    }
-                }
+                        // Bottom Metadata Row (Time, Opus pill, Timestamp & Checkmarks)
+                        HStack(spacing: 5) {
+                            let displaySec = player.isPlaying || player.currentTime > 0.1 ? player.currentTime : totalDurationSec
+                            let mins = Int(displaySec) / 60
+                            let secs = Int(displaySec) % 60
+                            Text(String(format: "%d:%02d", mins, secs))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(mine ? Color.white : Color.primary)
 
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text(message.timestamp, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(mine ? Color.white.opacity(0.7) : Color.secondary)
-                    if mine {
-                        Text("✓").font(.caption2.bold()).foregroundStyle(Color.white.opacity(0.7))
+                            // Opus 8kbps tag
+                            Text("Opus")
+                                .font(.system(size: 8, weight: .heavy))
+                                .foregroundStyle(mine ? Color.white.opacity(0.85) : Color.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(mine ? Color.white.opacity(0.2) : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 3))
+
+                            Spacer(minLength: 6)
+
+                            Text(message.timestamp, style: .time)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(mine ? Color.white.opacity(0.75) : Color.secondary)
+
+                            if mine {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(Color.white.opacity(0.75))
+                            }
+                        }
                     }
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .frame(width: 245)
             .background(
-                mine ? Color.accentColor : Color(.secondarySystemBackground),
-                in: RoundedRectangle(cornerRadius: 16)
+                mine
+                    ? LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    : LinearGradient(colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground)], startPoint: .top, endPoint: .bottom),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
-            if !mine { Spacer(minLength: 50) }
+            .shadow(color: Color.black.opacity(mine ? 0.08 : 0.04), radius: 3, x: 0, y: 1.5)
+
+            if !mine { Spacer(minLength: 40) }
         }
         .onDisappear {
             player.stop()
-        }
-    }
-
-    private func togglePlay() {
-        if player.isPlaying {
-            player.pause()
-        } else if let data = message.voiceBytes, !data.isEmpty {
-            player.play(data: data)
         }
     }
 }
