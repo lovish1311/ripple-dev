@@ -168,13 +168,24 @@ struct HomeView: View {
         if existingMsgs?.isEmpty ?? true {
             let now = Date()
             let msgs = [
-                MessageRecord(messageId: "seed-tab-1", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "hi", timestamp: now.addingTimeInterval(-7200), outgoing: true, status: .delivered, verified: true),
+                MessageRecord(messageId: "seed-tab-1", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "hi", timestamp: now.addingTimeInterval(-7200), outgoing: true, status: .read, verified: true),
                 MessageRecord(messageId: "seed-tab-2", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "hlo", timestamp: now.addingTimeInterval(-3600), outgoing: true, status: .delivered, verified: true),
                 MessageRecord(messageId: "seed-tab-3", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "Voice note", timestamp: now.addingTimeInterval(-2400), outgoing: false, status: .received, verified: true, voiceDurationMs: 4000),
                 MessageRecord(messageId: "seed-tab-4", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "Voice note", timestamp: now.addingTimeInterval(-1200), outgoing: false, status: .received, verified: true, voiceDurationMs: 3000),
-                MessageRecord(messageId: "seed-tab-5", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "🎤 Voice message (2s)", timestamp: now.addingTimeInterval(-180), outgoing: false, status: .received, verified: true, voiceDurationMs: 2000)
+                MessageRecord(messageId: "seed-tab-5", conversation: tabletNodeId, fromNodeId: tabletNodeId, fromName: "Tablet", text: "🎤 Voice message (2s)", timestamp: now.addingTimeInterval(-180), outgoing: false, status: .received, verified: true, voiceDurationMs: 2000),
+                MessageRecord(messageId: "seed-tab-6", conversation: tabletNodeId, fromNodeId: mesh.router.selfId.hex, fromName: mesh.displayName, text: "Can you hear me?", timestamp: now.addingTimeInterval(-60), outgoing: true, status: .sent, verified: true)
             ]
             msgs.forEach { ctx.insert($0) }
+        } else if let existing = existingMsgs {
+            if let m1 = existing.first(where: { $0.messageId == "seed-tab-1" }) {
+                m1.status = .read
+            }
+            if let m2 = existing.first(where: { $0.messageId == "seed-tab-2" }) {
+                m2.status = .delivered
+            }
+            if let mOther = existing.first(where: { $0.outgoing && $0.messageId != "seed-tab-1" && $0.messageId != "seed-tab-2" }) {
+                mOther.status = .sent
+            }
         }
 
         // Seed broadcast messages if empty

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum MessageStatus: String, Codable { case pending, sent, delivered, received, failed }
+enum MessageStatus: String, Codable { case pending, sent, delivered, read, received, failed }
 
 enum SosStatus: String, Codable, CaseIterable {
     case active
@@ -25,6 +25,8 @@ final class MessageRecord {
     var voiceBytes: Data?
     var voiceDurationMs: Int?
 
+    var isEdited: Bool = false
+
     var status: MessageStatus {
         get { MessageStatus(rawValue: statusRaw) ?? .received }
         set { statusRaw = newValue.rawValue }
@@ -36,10 +38,10 @@ final class MessageRecord {
 
     init(messageId: String, conversation: String, fromNodeId: String, fromName: String?, text: String,
          timestamp: Date, outgoing: Bool, status: MessageStatus, verified: Bool,
-         voiceBytes: Data? = nil, voiceDurationMs: Int? = nil) {
+         voiceBytes: Data? = nil, voiceDurationMs: Int? = nil, isEdited: Bool = false) {
         self.messageId = messageId; self.conversation = conversation; self.fromNodeId = fromNodeId; self.fromName = fromName
         self.text = text; self.timestamp = timestamp; self.outgoing = outgoing; self.statusRaw = status.rawValue; self.verified = verified
-        self.voiceBytes = voiceBytes; self.voiceDurationMs = voiceDurationMs
+        self.voiceBytes = voiceBytes; self.voiceDurationMs = voiceDurationMs; self.isEdited = isEdited
     }
 }
 

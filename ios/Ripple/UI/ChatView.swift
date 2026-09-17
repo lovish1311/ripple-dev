@@ -753,6 +753,42 @@ private struct VoiceMessageBubble: View {
         Double(max(1, (message.voiceDurationMs ?? 4000) / 1000))
     }
 
+    private var bubbleBg: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.28, green: 0.20, blue: 0.45, alpha: 1.0)
+                : UIColor(red: 0.92, green: 0.87, blue: 1.00, alpha: 1.0)
+            })
+        } else {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.18, green: 0.17, blue: 0.21, alpha: 1.0)
+                : UIColor(red: 0.95, green: 0.93, blue: 0.97, alpha: 1.0)
+            })
+        }
+    }
+
+    private var textColor: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.92, green: 0.87, blue: 1.0, alpha: 1.0)
+                : UIColor(red: 0.11, green: 0.10, blue: 0.17, alpha: 1.0)
+            })
+        } else {
+            return .primary
+        }
+    }
+
+    private var subtextColor: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.79, green: 0.77, blue: 0.82, alpha: 1.0)
+                : UIColor(red: 0.40, green: 0.38, blue: 0.45, alpha: 1.0)
+            })
+        } else {
+            return .secondary
+        }
+    }
+
     var body: some View {
         let mine = message.outgoing
         HStack(spacing: 0) {
@@ -767,18 +803,18 @@ private struct VoiceMessageBubble: View {
                 }
 
                 HStack(alignment: .center, spacing: 10) {
-                    // Play / Pause Circular Button
+                    // Play / Pause Circular Button (Matches Android #6750A4 dark violet)
                     Button {
                         player.togglePlay(data: message.voiceBytes, defaultDuration: totalDurationSec)
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(mine ? Color.white : Color.accentColor)
+                                .fill(Color(red: 0.40, green: 0.31, blue: 0.64))
                                 .frame(width: 38, height: 38)
-                                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
+                                .shadow(color: Color.black.opacity(0.10), radius: 2, x: 0, y: 1)
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 14, weight: .black))
-                                .foregroundStyle(mine ? Color.accentColor : Color.white)
+                                .foregroundStyle(.white)
                                 .offset(x: player.isPlaying ? 0 : 1)
                         }
                     }
@@ -802,9 +838,9 @@ private struct VoiceMessageBubble: View {
 
                                     RoundedRectangle(cornerRadius: 1.25)
                                         .fill(
-                                            mine
-                                                ? (isPlayed ? Color.white : Color.white.opacity(0.35))
-                                                : (isPlayed ? Color.accentColor : Color.primary.opacity(0.25))
+                                            isPlayed
+                                                ? Color(red: 0.40, green: 0.31, blue: 0.64)
+                                                : Color(red: 0.70, green: 0.65, blue: 0.80)
                                         )
                                         .frame(width: barWidth, height: activeHeight)
                                         .animation(.easeInOut(duration: 0.15), value: player.isPlaying)
@@ -822,33 +858,31 @@ private struct VoiceMessageBubble: View {
                         }
                         .frame(height: 22)
 
-                        // Bottom Metadata Row (Time, Opus pill, Timestamp & Checkmarks)
+                        // Bottom Metadata Row (Time, Opus pill, Timestamp & Status Ticks)
                         HStack(spacing: 5) {
                             let displaySec = player.isPlaying || player.currentTime > 0.1 ? player.currentTime : totalDurationSec
                             let mins = Int(displaySec) / 60
                             let secs = Int(displaySec) % 60
                             Text(String(format: "%d:%02d", mins, secs))
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(mine ? Color.white : Color.primary)
+                                .foregroundStyle(textColor)
 
-                            // Opus 8kbps tag
+                            // Opus pill
                             Text("OPUS 8kbps")
                                 .font(.system(size: 8, weight: .heavy))
-                                .foregroundStyle(mine ? Color.white.opacity(0.85) : Color.secondary)
+                                .foregroundStyle(subtextColor)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
-                                .background(mine ? Color.white.opacity(0.2) : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 3))
+                                .background(Color(red: 0.70, green: 0.65, blue: 0.80).opacity(0.35), in: RoundedRectangle(cornerRadius: 3))
 
                             Spacer(minLength: 6)
 
                             Text(message.timestamp, style: .time)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(mine ? Color.white.opacity(0.75) : Color.secondary)
+                                .foregroundStyle(subtextColor)
 
                             if mine {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(Color.white.opacity(0.75))
+                                DeliveryStatusIcon(status: message.status)
                             }
                         }
                     }
@@ -856,14 +890,17 @@ private struct VoiceMessageBubble: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .frame(width: 245)
+            .frame(width: 250)
             .background(
-                mine
-                    ? LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    : LinearGradient(colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground)], startPoint: .top, endPoint: .bottom),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                bubbleBg,
+                in: UnevenRoundedRectangle(
+                    topLeadingRadius: 16,
+                    bottomLeadingRadius: mine ? 16 : 4,
+                    bottomTrailingRadius: mine ? 4 : 16,
+                    topTrailingRadius: 16
+                )
             )
-            .shadow(color: Color.black.opacity(mine ? 0.08 : 0.04), radius: 3, x: 0, y: 1.5)
+            .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
 
             if !mine { Spacer(minLength: 40) }
         }
@@ -873,7 +910,47 @@ private struct VoiceMessageBubble: View {
     }
 }
 
-// MARK: - Standard Message Bubble (with quote support)
+// MARK: - Delivery Status Icon (Matches Android DeliveryStatusIcon: Pending Clock, Single Check, Double Check, Blue Ticks)
+struct DeliveryStatusIcon: View {
+    let status: MessageStatus
+
+    var body: some View {
+        switch status {
+        case .pending:
+            Image(systemName: "clock")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888
+        case .sent:
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 single check
+        case .delivered:
+            HStack(spacing: -5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(Color(red: 0.53, green: 0.53, blue: 0.53)) // #888888 double check
+        case .read:
+            HStack(spacing: -5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundStyle(Color(red: 0.20, green: 0.72, blue: 0.95)) // #34B7F1 Android status_read blue ticks
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(red: 0.90, green: 0.22, blue: 0.21)) // #E53935
+        case .received:
+            EmptyView()
+        }
+    }
+}
+
+// MARK: - Standard Message Bubble (Matches Android MessageBubble: Responsive, Content-Hugging, Soft Lavender Container)
 private struct MessageBubble: View {
     let message: MessageRecord
     let showSender: Bool
@@ -891,14 +968,56 @@ private struct MessageBubble: View {
         return ("", message.text)
     }
 
+    private var bubbleBg: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.28, green: 0.20, blue: 0.45, alpha: 1.0)
+                : UIColor(red: 0.92, green: 0.87, blue: 1.00, alpha: 1.0)
+            })
+        } else {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.18, green: 0.17, blue: 0.21, alpha: 1.0)
+                : UIColor(red: 0.95, green: 0.93, blue: 0.97, alpha: 1.0)
+            })
+        }
+    }
+
+    private var textColor: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.92, green: 0.87, blue: 1.0, alpha: 1.0)
+                : UIColor(red: 0.11, green: 0.10, blue: 0.17, alpha: 1.0)
+            })
+        } else {
+            return .primary
+        }
+    }
+
+    private var subtextColor: Color {
+        if message.outgoing {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor(red: 0.79, green: 0.77, blue: 0.82, alpha: 1.0)
+                : UIColor(red: 0.40, green: 0.38, blue: 0.45, alpha: 1.0)
+            })
+        } else {
+            return .secondary
+        }
+    }
+
     var body: some View {
         let mine = message.outgoing
-        HStack {
-            if mine { Spacer(minLength: 60) }
-            VStack(alignment: .leading, spacing: 4) {
+
+        HStack(spacing: 0) {
+            if mine {
+                Spacer(minLength: 40)
+            }
+
+            VStack(alignment: .trailing, spacing: 3) {
                 if showSender && !mine {
                     Text(message.fromName ?? NodeId(hex: message.fromNodeId)?.display ?? message.fromNodeId)
-                        .font(.caption.bold()).foregroundStyle(Color.accentColor)
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 // Render Quoted Reply Box if present
@@ -906,55 +1025,66 @@ private struct MessageBubble: View {
                     let parsed = quoteHeader
                     HStack(spacing: 6) {
                         RoundedRectangle(cornerRadius: 1.5)
-                            .fill(mine ? Color.white.opacity(0.8) : Color.accentColor)
+                            .fill(Color.accentColor)
                             .frame(width: 3)
                         Text(parsed.quote)
                             .font(.caption2)
-                            .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)
+                            .foregroundStyle(mine ? textColor.opacity(0.85) : .secondary)
                             .lineLimit(2)
                     }
                     .padding(6)
-                    .background(mine ? Color.white.opacity(0.15) : Color(.systemBackground), in: RoundedRectangle(cornerRadius: 6))
+                    .background(mine ? Color.white.opacity(0.35) : Color(.systemBackground), in: RoundedRectangle(cornerRadius: 6))
 
                     Text(parsed.body)
-                        .font(.subheadline)
-                        .foregroundStyle(mine ? .white : .primary)
+                        .font(.body)
+                        .foregroundStyle(textColor)
+                        .frame(alignment: .leading)
                 } else {
                     Text(message.text)
-                        .font(.subheadline)
-                        .foregroundStyle(mine ? .white : .primary)
+                        .font(.body)
+                        .foregroundStyle(textColor)
+                        .frame(minWidth: 36, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 6) {
-                    Spacer(minLength: 0)
+                // Bottom row: edited tag, timestamp, and status icon (hugging right edge)
+                HStack(spacing: 4) {
+                    if message.isEdited {
+                        Text("edited ·")
+                            .font(.system(size: 11).italic())
+                            .foregroundStyle(subtextColor)
+                    }
                     Text(message.timestamp, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(mine ? Color.white.opacity(0.7) : .secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(subtextColor)
+
                     if mine {
-                        Text(statusGlyph)
-                            .font(.caption2)
-                            .foregroundStyle(mine ? Color.white.opacity(0.7) : .secondary)
+                        DeliveryStatusIcon(status: message.status)
                     } else if !message.verified {
-                        Text("unverified").font(.caption2).foregroundStyle(.red)
+                        Text("unverified")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.red)
                     }
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(mine ? Color.accentColor : Color(.secondarySystemBackground),
-                        in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: mine ? 16 : 4, bottomTrailingRadius: mine ? 4 : 16, topTrailingRadius: 16))
-            if !mine { Spacer(minLength: 60) }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                bubbleBg,
+                in: UnevenRoundedRectangle(
+                    topLeadingRadius: 16,
+                    bottomLeadingRadius: mine ? 16 : 4,
+                    bottomTrailingRadius: mine ? 4 : 16,
+                    topTrailingRadius: 16
+                )
+            )
+            .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+
+            if !mine {
+                Spacer(minLength: 40)
+            }
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var statusGlyph: String {
-        switch message.status {
-        case .pending: return "🕓"
-        case .sent: return "✓"
-        case .delivered: return "✓✓"
-        case .failed: return "!"
-        case .received: return ""
-        }
     }
 }
 

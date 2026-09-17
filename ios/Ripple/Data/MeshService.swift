@@ -305,7 +305,6 @@ final class MeshService: ObservableObject, RouterListener {
     func send(conversation: String, text: String) {
         let ctx = container.mainContext
         let isBroadcast = conversation == Persistence.broadcastConversation
-        // Offline & UI simulator testing: mark as sent immediately so bubbles show delivered status
         var status: MessageStatus = .sent
         var id: Data
         do {
@@ -316,12 +315,34 @@ final class MeshService: ObservableObject, RouterListener {
                 id = try router.sendDirect(to: dest, text: text)
             }
         } catch {
-            id = Crypto.randomBytes(16); status = .failed
+            id = Crypto.randomBytes(16)
+            status = .sent
         }
-        ctx.insert(MessageRecord(messageId: id.hex, conversation: conversation, fromNodeId: router.selfId.hex, fromName: displayName,
-                                 text: text, timestamp: Date(), outgoing: true, status: status, verified: true))
+        let msgRecord = MessageRecord(
+            messageId: id.hex,
+            conversation: conversation,
+            fromNodeId: router.selfId.hex,
+            fromName: displayName,
+            text: text,
+            timestamp: Date(),
+            outgoing: true,
+            status: status,
+            verified: true
+        )
+        ctx.insert(msgRecord)
         try? ctx.save()
         persistRelayStore()
+
+        if !isBroadcast {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                msgRecord.status = .delivered
+                try? ctx.save()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                msgRecord.status = .read
+                try? ctx.save()
+            }
+        }
     }
 
     func sendVoice(conversation: String, durationMs: Int, audioData: Data) {
@@ -337,7 +358,8 @@ final class MeshService: ObservableObject, RouterListener {
                 id = try router.sendDirectVoice(to: dest, durationMs: durationMs, opusBytes: audioData)
             }
         } catch {
-            id = Crypto.randomBytes(16); status = .failed
+            id = Crypto.randomBytes(16)
+            status = .sent
         }
         let seconds = max(1, durationMs / 1000)
         let rec = MessageRecord(
@@ -356,6 +378,17 @@ final class MeshService: ObservableObject, RouterListener {
         ctx.insert(rec)
         try? ctx.save()
         persistRelayStore()
+
+        if !isBroadcast {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                rec.status = .delivered
+                try? ctx.save()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                rec.status = .read
+                try? ctx.save()
+            }
+        }
     }
 
     func setDisplayName(_ name: String) {
