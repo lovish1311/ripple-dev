@@ -204,6 +204,8 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
                     indicator = {},
                     divider = {}
                 ) {
+                    val totalChatsUnread = remember(conversations) { conversations.sumOf { it.unread } }
+                    val totalPeersUnread = remember(conversations) { conversations.filter { it.conversation != MeshService.BROADCAST_CONVERSATION }.sumOf { it.unread } }
                     Tab(
                         selected = tab == 0,
                         onClick = { tab = 0 },
@@ -212,6 +214,10 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
                                 Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(stringResource(R.string.tab_chats), style = MaterialTheme.typography.titleSmall)
+                                if (totalChatsUnread > 0) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("$totalChatsUnread") }
+                                }
                             }
                         }
                     )
@@ -223,6 +229,10 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
                                 Icon(Icons.Default.People, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(stringResource(R.string.tab_peers, peers.size), style = MaterialTheme.typography.titleSmall)
+                                if (totalPeersUnread > 0) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("$totalPeersUnread") }
+                                }
                             }
                         }
                     )
@@ -342,7 +352,12 @@ fun HomeScreen(vm: MeshViewModel, onOpenChat: (String) -> Unit, onOpenSettings: 
                     LazyColumn(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) { items(peers, key = { it.nodeId }) { PeerRow(it) { onOpenChat(it.nodeId) } } }
+                    ) {
+                        items(peers, key = { it.nodeId }) { peer ->
+                            val unreadCount = conversations.firstOrNull { it.conversation == peer.nodeId }?.unread ?: 0
+                            PeerRow(peer = peer, unreadCount = unreadCount) { onOpenChat(peer.nodeId) }
+                        }
+                    }
                 }
             }
         }
@@ -873,7 +888,7 @@ private fun MeshStatusPill(status: app.ripple.mesh.service.MeshStatus) {
 }
 
 @Composable
-private fun PeerRow(peer: PeerEntity, onClick: () -> Unit) {
+private fun PeerRow(peer: PeerEntity, unreadCount: Int = 0, onClick: () -> Unit) {
     val recent = System.currentTimeMillis() - peer.lastSeen < 5 * 60_000
     val dotLabel = stringResource(if (recent) R.string.peer_online_desc else R.string.peer_offline_desc)
     Card(
@@ -893,11 +908,16 @@ private fun PeerRow(peer: PeerEntity, onClick: () -> Unit) {
             },
             leadingContent = { Avatar(nodeIdHex = peer.nodeId, avatar = peer.avatar, name = peer.name) },
             trailingContent = {
-                Box(
-                    Modifier.size(10.dp)
-                        .background(if (recent) Color(0xFF2ECC71) else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .semantics { contentDescription = dotLabel },
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (unreadCount > 0) {
+                        UnreadBadge(unreadCount)
+                    }
+                    Box(
+                        Modifier.size(10.dp)
+                            .background(if (recent) Color(0xFF2ECC71) else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                            .semantics { contentDescription = dotLabel },
+                    )
+                }
             },
             colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent)
         )
