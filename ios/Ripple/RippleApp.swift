@@ -39,6 +39,7 @@ struct RippleApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let container: ModelContainer
     @StateObject private var mesh: MeshService
+    @ObservedObject private var appearance = AppearanceSettings.shared
 
     init() {
         let c = Persistence.container()
@@ -50,6 +51,9 @@ struct RippleApp: App {
         WindowGroup {
             HomeView()
                 .environmentObject(mesh)
+                .environmentObject(appearance)
+                .preferredColorScheme(appearance.colorScheme)
+                .tint(appearance.currentTheme.primaryColor)
         }
         .modelContainer(container)
     }

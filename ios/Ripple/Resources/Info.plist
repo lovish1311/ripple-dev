@@ -45,6 +45,10 @@
 	<!-- Opt-in SOS location -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>When you trigger an SOS beacon you may opt in to sharing your location so nearby responders can find you. Location is never sent unless you opt in.</string>
+
+	<!-- Microphone for Emergency Voice Notes -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ripple uses the microphone to record compact emergency voice notes and distress audio memos for transmission over the mesh network.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

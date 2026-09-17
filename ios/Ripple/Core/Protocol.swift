@@ -5,7 +5,7 @@ import CryptoKit
 enum MeshProtocol {
     static let version: UInt8 = 1
     static let maxTTL: UInt8 = 7
-    static let maxPayload = 4096
+    static let maxPayload = 16384
     static let headerSize = 46
     static let signatureSize = 64
     static let maxPacket = headerSize + maxPayload + signatureSize
@@ -22,6 +22,7 @@ enum MeshProtocol {
     // SOS beacon payload (PROTOCOL.md §2.2).
     static let maxSosText = 128
     static let sosFlagHasLocation: UInt8 = 0x01
+    static let sosFlagHasVoice: UInt8 = 0x02
 
     static let serviceUUID = "7E2C4B10-4B7D-4E3A-9C1F-8A2E5D6F1A01"
     static let rxUUID = "7E2C4B10-4B7D-4E3A-9C1F-8A2E5D6F1A02"
@@ -29,7 +30,7 @@ enum MeshProtocol {
 }
 
 enum PacketType: UInt8 {
-    case announce = 1, message = 2, ack = 3, sos = 4
+    case announce = 1, message = 2, ack = 3, sos = 4, voice = 5
 }
 
 struct Flags {
@@ -46,6 +47,25 @@ enum BatteryProfile: Int, CaseIterable {
     var relaysOrdinary: Bool { self != .powerSaver }
 }
 
+/// Codec for voice note payloads: [durationMs: 4 bytes big-endian] + [opusData].
+enum VoiceCodec {
+    static func encode(durationMs: Int, opusBytes: Data) -> Data {
+        var d = Data(capacity: 4 + opusBytes.count)
+        var dur = UInt32(durationMs).bigEndian
+        d.append(contentsOf: withUnsafeBytes(of: &dur) { Array($0) })
+        d.append(opusBytes)
+        return d
+    }
+
+    static func decode(_ payload: Data) throws -> (durationMs: Int, opusBytes: Data) {
+        guard payload.count >= 4 else { throw ProtocolError.tooShort }
+        var dur: UInt32 = 0
+        for i in 0..<4 { dur = (dur << 8) | UInt32(payload[payload.startIndex + i]) }
+        let opus = payload.subdata(in: (payload.startIndex + 4)..<payload.endIndex)
+        return (Int(dur), opus)
+    }
+}
+
 /// A decoded SOS beacon payload (PROTOCOL.md §2.2). `location` is nil unless GPS was opted in.
 struct SosLocation: Equatable {
     let latE7: Int32
@@ -57,21 +77,47 @@ struct SosPayload {
     let flags: UInt8
     let text: String
     let location: SosLocation?
+    let voiceBytes: Data?
+    let voiceDurationMs: Int?
+
+    init(flags: UInt8, text: String, location: SosLocation?, voiceBytes: Data? = nil, voiceDurationMs: Int? = nil) {
+        self.flags = flags
+        self.text = text
+        self.location = location
+        self.voiceBytes = voiceBytes
+        self.voiceDurationMs = voiceDurationMs
+    }
 }
 
 enum SosError: Error { case textTooLong, malformed }
 
 enum SosCodec {
-    static func encode(text: String, location: SosLocation?) throws -> Data {
+    static func encode(
+        text: String,
+        location: SosLocation?,
+        voiceBytes: Data? = nil,
+        voiceDurationMs: Int = 0
+    ) throws -> Data {
         let textBytes = Data(text.utf8)
         guard textBytes.count <= MeshProtocol.maxSosText else { throw SosError.textTooLong }
+        let hasLocation = location != nil
+        let hasVoice = voiceBytes != nil && !voiceBytes!.isEmpty
+        var flags: UInt8 = 0
+        if hasLocation { flags |= MeshProtocol.sosFlagHasLocation }
+        if hasVoice { flags |= MeshProtocol.sosFlagHasVoice }
+
         var d = Data()
-        d.append(location == nil ? 0 : MeshProtocol.sosFlagHasLocation)
+        d.append(flags)
         d.append(UInt8(textBytes.count))
         d.append(textBytes)
         if let loc = location {
             d.append(int32(loc.latE7)); d.append(int32(loc.lngE7))
             d.append(uint16(loc.accuracyMeters))
+        }
+        if hasVoice, let vb = voiceBytes {
+            d.append(uint16(min(max(voiceDurationMs, 0), 65535)))
+            d.append(uint16(min(max(vb.count, 0), 65535)))
+            d.append(vb)
         }
         return d
     }
@@ -84,16 +130,35 @@ enum SosCodec {
         guard textLen <= MeshProtocol.maxSosText, p.count >= 2 + textLen else { throw SosError.malformed }
         guard let text = String(data: p.subdata(in: 2..<(2 + textLen)), encoding: .utf8) else { throw SosError.malformed }
         let hasLocation = flags & MeshProtocol.sosFlagHasLocation != 0
+        let hasVoice = flags & MeshProtocol.sosFlagHasVoice != 0
+
+        var offset = 2 + textLen
+        let location: SosLocation?
         if hasLocation {
-            guard p.count == 2 + textLen + 10 else { throw SosError.malformed }
-            let base = 2 + textLen
-            let lat = readInt32(p, at: base)
-            let lng = readInt32(p, at: base + 4)
-            let acc = Int(readUInt16(p, at: base + 8))
-            return SosPayload(flags: flags, text: text, location: SosLocation(latE7: lat, lngE7: lng, accuracyMeters: acc))
+            guard p.count >= offset + 10 else { throw SosError.malformed }
+            let lat = readInt32(p, at: offset)
+            let lng = readInt32(p, at: offset + 4)
+            let acc = Int(readUInt16(p, at: offset + 8))
+            location = SosLocation(latE7: lat, lngE7: lng, accuracyMeters: acc)
+            offset += 10
+        } else {
+            location = nil
         }
-        guard p.count == 2 + textLen else { throw SosError.malformed }
-        return SosPayload(flags: flags, text: text, location: nil)
+
+        var voiceBytes: Data? = nil
+        var voiceDurationMs: Int? = nil
+        if hasVoice {
+            guard p.count >= offset + 4 else { throw SosError.malformed }
+            let dur = Int(readUInt16(p, at: offset))
+            let vLen = Int(readUInt16(p, at: offset + 2))
+            guard p.count >= offset + 4 + vLen else { throw SosError.malformed }
+            voiceBytes = p.subdata(in: (offset + 4)..<(offset + 4 + vLen))
+            voiceDurationMs = dur
+            offset += 4 + vLen
+        }
+
+        guard offset == p.count else { throw SosError.malformed }
+        return SosPayload(flags: flags, text: text, location: location, voiceBytes: voiceBytes, voiceDurationMs: voiceDurationMs)
     }
 
     private static func int32(_ v: Int32) -> Data {

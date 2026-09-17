@@ -127,13 +127,24 @@ enum PacketFactory {
         return try build(id, type: .message, payload: box, destination: destination, flags: Flags.encrypted, messageId: messageId)
     }
 
+    static func broadcastVoice(_ id: Identity, durationMs: Int, opusBytes: Data) throws -> Packet {
+        try build(id, type: .voice, payload: VoiceCodec.encode(durationMs: durationMs, opusBytes: opusBytes))
+    }
+
+    static func directVoice(_ id: Identity, to destination: NodeId, recipientWire: Data, durationMs: Int, opusBytes: Data) throws -> Packet {
+        let messageId = Crypto.randomBytes(MeshProtocol.messageIdSize)
+        let plain = VoiceCodec.encode(durationMs: durationMs, opusBytes: opusBytes)
+        let box = try Crypto.encrypt(recipientWire: recipientWire, messageId: messageId, source: id.nodeId, destination: destination, plaintext: plain)
+        return try build(id, type: .voice, payload: box, destination: destination, flags: Flags.encrypted, messageId: messageId)
+    }
+
     static func ack(_ id: Identity, to destination: NodeId, acknowledged messageId: Data) throws -> Packet {
         try build(id, type: .ack, payload: messageId, destination: destination)
     }
 
     /// An SOS beacon, broadcast mesh-wide. `location` is only included when GPS was opted in.
-    static func sos(_ id: Identity, text: String, location: SosLocation? = nil) throws -> Packet {
-        try build(id, type: .sos, payload: SosCodec.encode(text: text, location: location))
+    static func sos(_ id: Identity, text: String, location: SosLocation? = nil, voiceBytes: Data? = nil, voiceDurationMs: Int = 0) throws -> Packet {
+        try build(id, type: .sos, payload: SosCodec.encode(text: text, location: location, voiceBytes: voiceBytes, voiceDurationMs: voiceDurationMs))
     }
 
     private static func trimName(_ name: String) -> String {

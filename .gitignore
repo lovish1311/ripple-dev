@@ -375,6 +375,7 @@ android/captures/
 ios/Ripple.xcodeproj/
 ios/*.xcworkspace/
 ios/DerivedData/
+ios/build/
 ios/**/xcuserdata/
 # Node
 node_modules/

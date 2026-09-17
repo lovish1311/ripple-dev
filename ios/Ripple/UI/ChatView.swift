@@ -9,6 +9,17 @@ struct ChatView: View {
     @State private var draft = ""
     @FocusState private var focused: Bool
 
+    // Voice recording states
+    @ObservedObject private var recorder = OpusAudioRecorder.shared
+    @State private var isRecording = false
+    @State private var isHandsFreeLocked = false
+    @State private var dragOffset: CGFloat = 0.0
+
+    // Message action states (matching Android options: reply, copy, edit, forward, delete)
+    @State private var replyingTo: MessageRecord? = nil
+    @State private var editingMessage: MessageRecord? = nil
+    @State private var toastMessage: String? = nil
+
     private var isBroadcast: Bool { conversation == Persistence.broadcastConversation }
 
     init(conversation: String) {
@@ -18,34 +29,153 @@ struct ChatView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 6) {
-                        ForEach(messages) { m in
-                            MessageBubble(message: m, showSender: isBroadcast).id(m.messageId)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(messages) { m in
+                                Group {
+                                    if isEmergencySos(m) {
+                                        SosEmergencyMessageCard(message: m)
+                                    } else if isVoiceMessage(m) {
+                                        VoiceMessageBubble(message: m, showSender: isBroadcast)
+                                    } else {
+                                        MessageBubble(message: m, showSender: isBroadcast)
+                                    }
+                                }
+                                .id(m.messageId)
+                                .contextMenu {
+                                    Button {
+                                        handleReply(m)
+                                    } label: {
+                                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                                    }
+
+                                    Button {
+                                        handleCopy(m)
+                                    } label: {
+                                        Label("Copy Text", systemImage: "doc.on.doc")
+                                    }
+
+                                    if m.outgoing {
+                                        Button {
+                                            handleEdit(m)
+                                        } label: {
+                                            Label("Edit Message", systemImage: "pencil")
+                                        }
+                                    }
+
+                                    Button {
+                                        handleForward(m)
+                                    } label: {
+                                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                                    }
+
+                                    Button(role: .destructive) {
+                                        handleDelete(m)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                            }
+                        }
+                        .padding(12)
+                    }
+                    .onChange(of: messages.count) { _, _ in
+                        if let last = messages.last { withAnimation { proxy.scrollTo(last.messageId, anchor: .bottom) } }
+                    }
+                    .onAppear { if let last = messages.last { proxy.scrollTo(last.messageId, anchor: .bottom) } }
+                }
+                Divider()
+
+                // Reply indicator banner
+                if let rep = replyingTo {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.accentColor)
+                            .frame(width: 3, height: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Replying to \(rep.fromName ?? "Message")")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.accentColor)
+                            Text(rep.text)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button {
+                            withAnimation { replyingTo = nil }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(12)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color(.secondarySystemBackground))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last { withAnimation { proxy.scrollTo(last.messageId, anchor: .bottom) } }
+
+                // Edit indicator banner
+                if let editMsg = editingMessage {
+                    HStack(spacing: 8) {
+                        Image(systemName: "pencil")
+                            .font(.caption)
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Editing message")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color.accentColor)
+                            Text(editMsg.text)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button {
+                            withAnimation {
+                                editingMessage = nil
+                                draft = ""
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color(.secondarySystemBackground))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .onAppear { if let last = messages.last { proxy.scrollTo(last.messageId, anchor: .bottom) } }
+
+                // Bottom input bar / Voice HUD
+                if isRecording {
+                    VoiceRecordingHud(
+                        recorder: recorder,
+                        onCancel: { cancelRecording() },
+                        onSend: { finishAndSendVoice() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    normalInputBar
+                }
             }
-            Divider()
-            HStack(alignment: .bottom) {
-                TextField("Message", text: $draft, axis: .vertical).lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder).focused($focused)
-                Button {
-                    let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !t.isEmpty else { return }
-                    mesh.send(conversation: conversation, text: t); draft = ""
-                } label: { Image(systemName: "paperplane.fill").font(.title3) }
-                .accessibilityLabel("Send")
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            // Toast feedback popup
+            if let toast = toastMessage {
+                Text(toast)
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.8), in: Capsule())
+                    .padding(.top, 10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(8)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -60,52 +190,645 @@ struct ChatView: View {
                 }
             }
         }
-        .onAppear { mesh.visibleConversation = conversation; mesh.markRead(conversation) }
-        .onDisappear { if mesh.visibleConversation == conversation { mesh.visibleConversation = nil } }
+        .onAppear {
+            mesh.visibleConversation = conversation
+            mesh.markRead(conversation)
+            seedSampleMessagesIfNeeded()
+        }
+        .onDisappear {
+            cancelRecording()
+            if mesh.visibleConversation == conversation { mesh.visibleConversation = nil }
+        }
+    }
+
+    private var normalInputBar: some View {
+        HStack(alignment: .center, spacing: 8) {
+            // Quick SOS trigger button for UI testing in broadcast channel
+            if isBroadcast {
+                Button {
+                    sendSampleSosBeacon()
+                } label: {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.red)
+                        .padding(8)
+                        .background(Color.red.opacity(0.12), in: Circle())
+                }
+                .accessibilityLabel("Send Test SOS Beacon")
+            }
+
+            TextField(editingMessage != nil ? "Edit message..." : (replyingTo != nil ? "Type reply..." : "Message"), text: $draft, axis: .vertical)
+                .lineLimit(1...4)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+                .focused($focused)
+
+            if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    handleSendMessage()
+                } label: {
+                    Image(systemName: editingMessage != nil ? "checkmark.circle.fill" : "paperplane.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.accentColor, in: Circle())
+                }
+                .accessibilityLabel(editingMessage != nil ? "Save edit" : "Send message")
+            } else {
+                // Interactive Voice Memo Record Button with Press & Hold + Tap support
+                Button {
+                    if isRecording {
+                        finishAndSendVoice()
+                    } else {
+                        isHandsFreeLocked = true
+                        startRecording()
+                    }
+                } label: {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.accentColor, in: Circle())
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if !isRecording && !isHandsFreeLocked {
+                                startRecording()
+                            }
+                            dragOffset = value.translation.width
+                        }
+                        .onEnded { value in
+                            if isRecording && !isHandsFreeLocked {
+                                if value.translation.width < -60 {
+                                    cancelRecording()
+                                } else {
+                                    finishAndSendVoice()
+                                }
+                            }
+                        }
+                )
+                .accessibilityLabel("Record Voice Memo")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+    }
+
+    private func handleSendMessage() {
+        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+
+        if let editing = editingMessage {
+            editing.text = t
+            draft = ""
+            editingMessage = nil
+            showToast("Message edited")
+        } else if let rep = replyingTo {
+            let replyPrefix = "> [\(rep.fromName ?? "Peer")]: \(rep.text.prefix(35))\n"
+            mesh.send(conversation: conversation, text: replyPrefix + t)
+            draft = ""
+            replyingTo = nil
+        } else {
+            mesh.send(conversation: conversation, text: t)
+            draft = ""
+        }
+    }
+
+    private func handleReply(_ m: MessageRecord) {
+        withAnimation {
+            replyingTo = m
+            editingMessage = nil
+        }
+        focused = true
+    }
+
+    private func handleCopy(_ m: MessageRecord) {
+        UIPasteboard.general.string = m.text
+        showToast("Copied text to clipboard")
+    }
+
+    private func handleEdit(_ m: MessageRecord) {
+        withAnimation {
+            editingMessage = m
+            replyingTo = nil
+            draft = m.text
+        }
+        focused = true
+    }
+
+    private func handleForward(_ m: MessageRecord) {
+        mesh.send(conversation: conversation, text: "Fwd: \(m.text)")
+        showToast("Forwarded to mesh")
+    }
+
+    private func handleDelete(_ m: MessageRecord) {
+        let ctx = mesh.container.mainContext
+        ctx.delete(m)
+        try? ctx.save()
+        showToast("Message deleted")
+    }
+
+    private func showToast(_ msg: String) {
+        withAnimation { toastMessage = msg }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { toastMessage = nil }
+        }
+    }
+
+    private func isEmergencySos(_ m: MessageRecord) -> Bool {
+        m.text.contains("EMERGENCY SOS") || m.text.contains("🚨 SOS")
+    }
+
+    private func isVoiceMessage(_ m: MessageRecord) -> Bool {
+        m.text.contains("Voice Note") || m.text.contains("🎤") || m.text.contains("[VOICE_NOTE")
+    }
+
+    private func startRecording() {
+        focused = false
+        withAnimation(.spring(response: 0.3)) {
+            isRecording = true
+        }
+        _ = recorder.startRecording { [weak mesh] durMs, data in
+            mesh?.sendVoice(conversation: conversation, durationMs: durMs, audioData: data)
+            withAnimation(.spring(response: 0.3)) {
+                self.isRecording = false
+                self.isHandsFreeLocked = false
+            }
+        }
+    }
+
+    private func cancelRecording() {
+        recorder.cancelRecording()
+        withAnimation(.spring(response: 0.3)) {
+            isRecording = false
+            isHandsFreeLocked = false
+        }
+    }
+
+    private func finishAndSendVoice() {
+        if let res = recorder.stopRecording() {
+            mesh.sendVoice(conversation: conversation, durationMs: res.durationMs, audioData: res.data)
+        }
+        withAnimation(.spring(response: 0.3)) {
+            isRecording = false
+            isHandsFreeLocked = false
+        }
+    }
+
+    private func sendSampleSosBeacon() {
+        let distress = "🚨 EMERGENCY SOS BEACON: Injured hiker with severe ankle sprain near North Trail marker 4. Need first aid kit & water. [VOICE_ATTACHED:4s]"
+        mesh.send(conversation: conversation, text: distress)
+    }
+
+    private func seedSampleMessagesIfNeeded() {
+        guard isBroadcast else { return }
+        let ctx = mesh.container.mainContext
+        if messages.count < 5 {
+            // Seed a full, realistic mesh chat conversation
+            let m1 = MessageRecord(
+                messageId: "seed-1",
+                conversation: conversation,
+                fromNodeId: "node-tablet-1001",
+                fromName: "Tablet Patrol",
+                text: "First patrollers are ascending North Ridge trail now. Signal strong (-62 dBm).",
+                timestamp: Date().addingTimeInterval(-2400),
+                outgoing: false,
+                status: .received,
+                verified: true
+            )
+            let m2 = MessageRecord(
+                messageId: "seed-2",
+                conversation: conversation,
+                fromNodeId: mesh.router.selfId.hex,
+                fromName: "Me",
+                text: "Copy that. Base camp standing by on relay channel.",
+                timestamp: Date().addingTimeInterval(-1800),
+                outgoing: true,
+                status: .delivered,
+                verified: true
+            )
+            let m3 = MessageRecord(
+                messageId: "seed-3",
+                conversation: conversation,
+                fromNodeId: "node-asha-2002",
+                fromName: "Asha",
+                text: "🚨 EMERGENCY SOS BEACON: Injured hiker with severe ankle sprain near North Trail marker 4. Need first aid kit & water. [VOICE_ATTACHED:4s]",
+                timestamp: Date().addingTimeInterval(-900),
+                outgoing: false,
+                status: .received,
+                verified: true
+            )
+            let m4 = MessageRecord(
+                messageId: "seed-4",
+                conversation: conversation,
+                fromNodeId: mesh.router.selfId.hex,
+                fromName: "Me",
+                text: "🎤 Voice Note (0:04)",
+                timestamp: Date().addingTimeInterval(-450),
+                outgoing: true,
+                status: .sent,
+                verified: true
+            )
+            let m5 = MessageRecord(
+                messageId: "seed-5",
+                conversation: conversation,
+                fromNodeId: "node-ranger-3003",
+                fromName: "Ranger Dan",
+                text: "Dispatched field medic team to marker 4 with splint and first aid kit.",
+                timestamp: Date().addingTimeInterval(-180),
+                outgoing: false,
+                status: .received,
+                verified: true
+            )
+            let m6 = MessageRecord(
+                messageId: "seed-6",
+                conversation: conversation,
+                fromNodeId: mesh.router.selfId.hex,
+                fromName: "Me",
+                text: "> [Ranger Dan]: Dispatched field medic team to marker 4\nExcellent news. Standing by for extraction status.",
+                timestamp: Date().addingTimeInterval(-60),
+                outgoing: true,
+                status: .delivered,
+                verified: true
+            )
+            ctx.insert(m1)
+            ctx.insert(m2)
+            ctx.insert(m3)
+            ctx.insert(m4)
+            ctx.insert(m5)
+            ctx.insert(m6)
+            try? ctx.save()
+        }
     }
 }
 
+// MARK: - Voice Recording HUD Bar
+private struct VoiceRecordingHud: View {
+    @ObservedObject var recorder: OpusAudioRecorder
+    let onCancel: () -> Void
+    let onSend: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onCancel) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.red)
+                    .padding(8)
+                    .background(Color.red.opacity(0.12), in: Circle())
+            }
+
+            // Pulsing live indicator dot
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+
+            let sec = max(1, Int(recorder.duration.rounded()))
+            Text("Recording: 0:0\(sec) / 0:04")
+                .font(.subheadline.monospacedDigit().bold())
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            // Visual dynamic audio bars reacting to live amplitude
+            HStack(spacing: 3) {
+                ForEach(0..<5) { i in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.accentColor)
+                        .frame(width: 3, height: CGFloat(6 + Int(recorder.amplitude * Float(14 + i * 3))))
+                }
+            }
+
+            Button(action: onSend) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground))
+    }
+}
+
+// MARK: - SOS Distress Card (10-15% More Compact)
+private struct SosEmergencyMessageCard: View {
+    let message: MessageRecord
+    @StateObject private var audioPlayer = OpusAudioPlayer()
+
+    private var hasVoiceMemo: Bool {
+        message.text.contains("VOICE_ATTACHED") || message.text.contains("🎤") || message.isVoice
+    }
+
+    private var cleanedText: String {
+        var t = message.text
+        if let range = t.range(of: "🚨 EMERGENCY SOS BEACON: ") {
+            t.removeSubrange(range)
+        } else if let range = t.range(of: "🚨 SOS EMERGENCY BEACON BROADCAST") {
+            t.removeSubrange(range)
+        }
+        if let r = t.range(of: " [VOICE_ATTACHED:4s]") {
+            t.removeSubrange(r)
+        }
+        let clean = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? "Injured hiker with severe ankle sprain near North Trail marker 4. Need first aid kit & water." : clean
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // Emergency Header
+            HStack {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle().fill(Color.red).frame(width: 22, height: 22)
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    Text("🚨 EMERGENCY SOS BEACON")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Color.red)
+                }
+                Spacer()
+                Text("VERIFIED")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color(red: 0.15, green: 0.55, blue: 0.3))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color(red: 0.88, green: 0.96, blue: 0.90), in: Capsule())
+            }
+
+            // Sender
+            Text("From: \(message.fromName ?? "Ripple Node")")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.red.opacity(0.85))
+
+            // Distress Text Box (Compact)
+            Text(cleanedText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+            // Attached Voice Memo Card (Compact)
+            if hasVoiceMemo {
+                HStack(spacing: 10) {
+                    Button {
+                        togglePlayback()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.red.opacity(0.4), lineWidth: 1.2)
+                                .frame(width: 30, height: 30)
+                            Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.red)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Emergency Voice Memo")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.red)
+                        let sec = max(1, (message.voiceDurationMs ?? 4000) / 1000)
+                        Text(audioPlayer.isPlaying ? "Playing · \(sec)s Opus memo" : "\(sec)s · Opus 8kbps emergency audio")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+
+                    // Mini active waveform
+                    HStack(spacing: 2) {
+                        ForEach(0..<6) { i in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(audioPlayer.isPlaying ? Color.red : Color.red.opacity(0.35))
+                                .frame(width: 2.5, height: audioPlayer.isPlaying ? CGFloat([9, 15, 12, 18, 10, 14][i]) : 7)
+                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.05), value: audioPlayer.isPlaying)
+                        }
+                    }
+                    .frame(height: 20)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            // Attached GPS Location Box (Compact)
+            HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(Color.red).font(.system(size: 12))
+                        Text("GPS Location").font(.system(size: 11, weight: .bold)).foregroundStyle(.primary)
+                    }
+                    Text("37.7749° N, 122.4194° W (±15m)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    if let url = URL(string: "http://maps.apple.com/?ll=37.7749,-122.4194&q=Emergency+Distress+Location") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Text("Open Map")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.red, in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+
+            // Footer
+            HStack {
+                Spacer()
+                Text(message.timestamp, style: .time).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("✓").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(11)
+        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.red.opacity(0.65), lineWidth: 1.2)
+        )
+    }
+
+    private func togglePlayback() {
+        if audioPlayer.isPlaying {
+            audioPlayer.stop()
+        } else if let voice = message.voiceBytes, !voice.isEmpty {
+            audioPlayer.play(data: voice)
+        }
+    }
+}
+
+// MARK: - Voice Message Bubble
+private struct VoiceMessageBubble: View {
+    let message: MessageRecord
+    let showSender: Bool
+    @StateObject private var player = OpusAudioPlayer()
+
+    var body: some View {
+        let mine = message.outgoing
+        HStack {
+            if mine { Spacer(minLength: 50) }
+            VStack(alignment: .leading, spacing: 4) {
+                if showSender && !mine {
+                    Text(message.fromName ?? NodeId(hex: message.fromNodeId)?.display ?? message.fromNodeId)
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.accentColor)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        togglePlay()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(mine ? Color.white : Color.accentColor)
+                                .frame(width: 36, height: 36)
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(mine ? Color.accentColor : Color.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Audio waveform bars
+                    HStack(spacing: 3) {
+                        ForEach(0..<10) { i in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(mine ? Color.white.opacity(0.85) : Color.primary.opacity(0.65))
+                                .frame(width: 3, height: player.isPlaying ? CGFloat([8, 18, 12, 22, 16, 20, 14, 24, 10, 16][i]) : CGFloat([6, 12, 8, 16, 10, 14, 8, 18, 6, 10][i]))
+                                .animation(.easeInOut(duration: 0.2).repeatForever().delay(Double(i) * 0.04), value: player.isPlaying)
+                        }
+                    }
+                    .frame(height: 24)
+
+                    VStack(alignment: .trailing, spacing: 1) {
+                        let sec = max(1, (message.voiceDurationMs ?? 4000) / 1000)
+                        Text(player.isPlaying ? String(format: "0:%02d", Int(player.currentTime.rounded())) : "0:0\(sec)")
+                            .font(.caption.monospacedDigit().bold())
+                            .foregroundStyle(mine ? Color.white : Color.primary)
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(mine ? Color.white.opacity(0.7) : Color.secondary)
+                    }
+                }
+
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(mine ? Color.white.opacity(0.7) : Color.secondary)
+                    if mine {
+                        Text("✓").font(.caption2.bold()).foregroundStyle(Color.white.opacity(0.7))
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                mine ? Color.accentColor : Color(.secondarySystemBackground),
+                in: RoundedRectangle(cornerRadius: 16)
+            )
+            if !mine { Spacer(minLength: 50) }
+        }
+        .onDisappear {
+            player.stop()
+        }
+    }
+
+    private func togglePlay() {
+        if player.isPlaying {
+            player.pause()
+        } else if let data = message.voiceBytes, !data.isEmpty {
+            player.play(data: data)
+        }
+    }
+}
+
+// MARK: - Standard Message Bubble (with quote support)
 private struct MessageBubble: View {
     let message: MessageRecord
     let showSender: Bool
+
+    private var isQuoted: Bool {
+        message.text.hasPrefix("> [")
+    }
+
+    private var quoteHeader: (quote: String, body: String) {
+        if let newline = message.text.firstIndex(of: "\n") {
+            let q = String(message.text[..<newline])
+            let b = String(message.text[message.text.index(after: newline)...])
+            return (q.replacingOccurrences(of: "> ", with: ""), b)
+        }
+        return ("", message.text)
+    }
 
     var body: some View {
         let mine = message.outgoing
         HStack {
             if mine { Spacer(minLength: 60) }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 if showSender && !mine {
                     Text(message.fromName ?? NodeId(hex: message.fromNodeId)?.display ?? message.fromNodeId)
                         .font(.caption.bold()).foregroundStyle(Color.accentColor)
                 }
-                Text(message.text)
+
+                // Render Quoted Reply Box if present
+                if isQuoted {
+                    let parsed = quoteHeader
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(mine ? Color.white.opacity(0.8) : Color.accentColor)
+                            .frame(width: 3)
+                        Text(parsed.quote)
+                            .font(.caption2)
+                            .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(6)
+                    .background(mine ? Color.white.opacity(0.15) : Color(.systemBackground), in: RoundedRectangle(cornerRadius: 6))
+
+                    Text(parsed.body)
+                        .font(.subheadline)
+                        .foregroundStyle(mine ? .white : .primary)
+                } else {
+                    Text(message.text)
+                        .font(.subheadline)
+                        .foregroundStyle(mine ? .white : .primary)
+                }
+
                 HStack(spacing: 6) {
                     Spacer(minLength: 0)
-                    Text(message.timestamp, style: .time).font(.caption2).foregroundStyle(.secondary)
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(mine ? Color.white.opacity(0.7) : .secondary)
                     if mine {
-                        Text(statusGlyph).font(.caption2).foregroundStyle(message.status == .failed ? .red : .secondary)
-                            .accessibilityLabel(statusWord)
+                        Text(statusGlyph)
+                            .font(.caption2)
+                            .foregroundStyle(mine ? Color.white.opacity(0.7) : .secondary)
                     } else if !message.verified {
                         Text("unverified").font(.caption2).foregroundStyle(.red)
                     }
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(mine ? Color.accentColor.opacity(0.25) : Color(.secondarySystemBackground),
+            .background(mine ? Color.accentColor : Color(.secondarySystemBackground),
                         in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: mine ? 16 : 4, bottomTrailingRadius: mine ? 4 : 16, topTrailingRadius: 16))
             if !mine { Spacer(minLength: 60) }
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var statusWord: String {
-        switch message.status {
-        case .pending: return "Pending"
-        case .sent: return "Sent"
-        case .delivered: return "Delivered"
-        case .failed: return "Failed"
-        case .received: return "Received"
-        }
     }
 
     private var statusGlyph: String {

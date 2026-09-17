@@ -33,6 +33,8 @@ final class MeshRouterTests: XCTestCase {
     final class Node: RouterListener {
         let name: String
         var inbox: [InboundMessage] = []
+        var voiceInbox: [InboundVoiceMessage] = []
+        var sosInbox: [SosBeacon] = []
         var acks: [Data] = []
         var links: [FakeLink] = []
         var router: MeshRouter!
@@ -42,6 +44,8 @@ final class MeshRouterTests: XCTestCase {
             router.listener = self
         }
         func router(_ router: MeshRouter, didReceive message: InboundMessage) { inbox.append(message) }
+        func router(_ router: MeshRouter, didReceiveVoice message: InboundVoiceMessage) { voiceInbox.append(message) }
+        func router(_ router: MeshRouter, didReceiveSos beacon: SosBeacon) { sosInbox.append(beacon) }
         func router(_ router: MeshRouter, didReceiveAck messageId: Data, from: NodeId) { acks.append(messageId) }
         func router(_ router: MeshRouter, peersDidChange peers: [Peer]) {}
     }
@@ -119,5 +123,50 @@ final class MeshRouterTests: XCTestCase {
         forged.signature = try mallory.sign(forged.encodeUnsigned())
         b.router.onReceive(b.links[0], forged.encode()); net.settle()
         XCTAssertFalse(b.inbox.contains { $0.text == "pwned" })
+    }
+
+    func testVoiceCodecAndMeshVoiceDelivery() throws {
+        let dummyOpus = Data([0x4F, 0x70, 0x75, 0x73, 0x01, 0x02, 0x03, 0x04])
+        let encoded = VoiceCodec.encode(durationMs: 3850, opusBytes: dummyOpus)
+        let decoded = try VoiceCodec.decode(encoded)
+        XCTAssertEqual(decoded.durationMs, 3850)
+        XCTAssertEqual(decoded.opusBytes, dummyOpus)
+
+        let net = Net()
+        let a = Node("A"), b = Node("B")
+        Self.link(a, b, net: net); net.settle()
+
+        try a.router.sendBroadcastVoice(durationMs: 4000, opusBytes: dummyOpus)
+        net.settle()
+        XCTAssertEqual(b.voiceInbox.count, 1)
+        XCTAssertEqual(b.voiceInbox[0].durationMs, 4000)
+        XCTAssertEqual(b.voiceInbox[0].voiceBytes, dummyOpus)
+        XCTAssertTrue(b.voiceInbox[0].verified)
+    }
+
+    func testSosCodecWithVoiceAndLocation() throws {
+        let dummyVoice = Data([0xAA, 0xBB, 0xCC, 0xDD])
+        let loc = SosLocation(latE7: 377749000, lngE7: -1224194000, accuracyMeters: 12)
+        let payload = try SosCodec.encode(text: "Hiker injured", location: loc, voiceBytes: dummyVoice, voiceDurationMs: 3200)
+        let decoded = try SosCodec.decode(payload)
+
+        XCTAssertEqual(decoded.text, "Hiker injured")
+        XCTAssertEqual(decoded.location?.latE7, 377749000)
+        XCTAssertEqual(decoded.location?.lngE7, -1224194000)
+        XCTAssertEqual(decoded.location?.accuracyMeters, 12)
+        XCTAssertEqual(decoded.voiceDurationMs, 3200)
+        XCTAssertEqual(decoded.voiceBytes, dummyVoice)
+
+        let net = Net()
+        let a = Node("A"), b = Node("B")
+        Self.link(a, b, net: net); net.settle()
+
+        try a.router.sendSos(text: "Need evacuation", location: loc, voiceBytes: dummyVoice, voiceDurationMs: 3200)
+        net.settle()
+        XCTAssertEqual(b.sosInbox.count, 1)
+        XCTAssertEqual(b.sosInbox[0].text, "Need evacuation")
+        XCTAssertEqual(b.sosInbox[0].location?.latE7, 377749000)
+        XCTAssertEqual(b.sosInbox[0].voiceBytes, dummyVoice)
+        XCTAssertEqual(b.sosInbox[0].voiceDurationMs, 3200)
     }
 }

@@ -31,6 +31,17 @@ struct InboundMessage {
     let timestamp: UInt64
 }
 
+struct InboundVoiceMessage {
+    let messageId: Data
+    let from: NodeId
+    let fromName: String?
+    let voiceBytes: Data
+    let durationMs: Int
+    let isBroadcast: Bool
+    let verified: Bool
+    let timestamp: UInt64
+}
+
 /// Delivery report for an SOS beacon. `location` is nil unless the sender opted in to GPS.
 struct SosBeacon {
     let messageId: Data
@@ -40,10 +51,25 @@ struct SosBeacon {
     let location: SosLocation?
     let verified: Bool
     let timestamp: UInt64
+    let voiceBytes: Data?
+    let voiceDurationMs: Int?
+
+    init(messageId: Data, from: NodeId, fromName: String?, text: String, location: SosLocation?, verified: Bool, timestamp: UInt64, voiceBytes: Data? = nil, voiceDurationMs: Int? = nil) {
+        self.messageId = messageId
+        self.from = from
+        self.fromName = fromName
+        self.text = text
+        self.location = location
+        self.verified = verified
+        self.timestamp = timestamp
+        self.voiceBytes = voiceBytes
+        self.voiceDurationMs = voiceDurationMs
+    }
 }
 
 protocol RouterListener: AnyObject {
     func router(_ router: MeshRouter, didReceive message: InboundMessage)
+    func router(_ router: MeshRouter, didReceiveVoice message: InboundVoiceMessage)
     func router(_ router: MeshRouter, didReceiveAck messageId: Data, from: NodeId)
     func router(_ router: MeshRouter, peersDidChange peers: [Peer])
     func router(_ router: MeshRouter, didIdentify link: Link, as peer: Peer)
@@ -51,6 +77,7 @@ protocol RouterListener: AnyObject {
 }
 
 extension RouterListener {
+    func router(_ router: MeshRouter, didReceiveVoice message: InboundVoiceMessage) {}
     func router(_ router: MeshRouter, didIdentify link: Link, as peer: Peer) {}
     func router(_ router: MeshRouter, didReceiveSos beacon: SosBeacon) {}
 }
@@ -159,8 +186,8 @@ final class MeshRouter {
 
     /// Broadcast an SOS beacon. `location` is only sent if the operator opted in to sharing GPS.
     @discardableResult
-    func sendSos(text: String, location: SosLocation? = nil) throws -> Data {
-        originate(try PacketFactory.sos(identity, text: text, location: location))
+    func sendSos(text: String, location: SosLocation? = nil, voiceBytes: Data? = nil, voiceDurationMs: Int = 0) throws -> Data {
+        originate(try PacketFactory.sos(identity, text: text, location: location, voiceBytes: voiceBytes, voiceDurationMs: voiceDurationMs))
     }
 
     enum SendError: Error { case unknownPeer(NodeId) }
@@ -169,6 +196,22 @@ final class MeshRouter {
     func sendDirect(to destination: NodeId, text: String) throws -> Data {
         guard let peer = peer(destination) else { throw SendError.unknownPeer(destination) }
         return originate(try PacketFactory.directText(identity, to: destination, recipientWire: peer.publicKeyWire, text: text))
+    }
+
+    @discardableResult
+    func sendBroadcastVoice(durationMs: Int, opusBytes: Data) throws -> Data {
+        originate(try PacketFactory.broadcastVoice(identity, durationMs: durationMs, opusBytes: opusBytes))
+    }
+
+    @discardableResult
+    func sendDirectVoice(to destination: NodeId, durationMs: Int, opusBytes: Data) throws -> Data {
+        guard let peer = peer(destination) else { throw SendError.unknownPeer(destination) }
+        return originate(try PacketFactory.directVoice(identity, to: destination, recipientWire: peer.publicKeyWire, durationMs: durationMs, opusBytes: opusBytes))
+    }
+
+    @discardableResult
+    func sendAck(to destination: NodeId, acknowledged messageId: Data) throws -> Data {
+        originate(try PacketFactory.ack(identity, to: destination, acknowledged: messageId))
     }
 
     private func originate(_ packet: Packet) -> Data {
@@ -249,7 +292,8 @@ final class MeshRouter {
             if peer != nil && !verified { return } // forged beacon from a known peer
             guard let sos = try? SosCodec.decode(p.payload) else { relay(p, from: link); return }
             listener?.router(self, didReceiveSos: SosBeacon(messageId: p.messageId, from: p.source, fromName: peer?.name,
-                                                            text: sos.text, location: sos.location, verified: verified, timestamp: p.timestamp))
+                                                            text: sos.text, location: sos.location, verified: verified, timestamp: p.timestamp,
+                                                            voiceBytes: sos.voiceBytes, voiceDurationMs: sos.voiceDurationMs))
             relay(p, from: link) // beacons always flood onward
             return
         }
@@ -273,6 +317,24 @@ final class MeshRouter {
                 }
                 log.i("router", "\(isBroadcast ? "broadcast" : "direct") \(p.messageIdHex.prefix(8)) from \(peer?.name ?? p.source.short) via \(link.id) (ttl \(p.ttl))")
                 listener?.router(self, didReceive: InboundMessage(messageId: p.messageId, from: p.source, fromName: peer?.name, text: text, isBroadcast: isBroadcast, verified: verified, timestamp: p.timestamp))
+                if forMe, let ack = try? PacketFactory.ack(identity, to: p.source, acknowledged: p.messageId) { _ = originateLocked(ack) }
+            case .voice:
+                let voiceData: Data
+                if p.isEncrypted {
+                    guard let plain = try? Crypto.decrypt(recipient: identity.agreement, messageId: p.messageId, source: p.source, destination: p.destination, payload: p.payload) else {
+                        log.w("router", "could not decrypt voice \(p.messageIdHex.prefix(8)) from \(p.source.short)")
+                        return
+                    }
+                    voiceData = plain
+                } else {
+                    voiceData = p.payload
+                }
+                guard let decoded = try? VoiceCodec.decode(voiceData) else {
+                    log.w("router", "malformed voice packet \(p.messageIdHex.prefix(8))")
+                    return
+                }
+                log.i("router", "\(isBroadcast ? "broadcast" : "direct") voice \(p.messageIdHex.prefix(8)) from \(peer?.name ?? p.source.short) via \(link.id) (ttl \(p.ttl))")
+                listener?.router(self, didReceiveVoice: InboundVoiceMessage(messageId: p.messageId, from: p.source, fromName: peer?.name, voiceBytes: decoded.opusBytes, durationMs: decoded.durationMs, isBroadcast: isBroadcast, verified: verified, timestamp: p.timestamp))
                 if forMe, let ack = try? PacketFactory.ack(identity, to: p.source, acknowledged: p.messageId) { _ = originateLocked(ack) }
             case .ack:
                 if forMe && p.payload.count == MeshProtocol.messageIdSize { listener?.router(self, didReceiveAck: p.payload, from: p.source) }
@@ -314,7 +376,7 @@ final class MeshRouter {
 
     private func rateAllows(_ p: Packet) -> Bool {
         guard let cfg = inboundRateCfg else { return true }
-        if p.type != .message && p.type != .sos { return true }
+        if p.type != .message && p.type != .sos && p.type != .voice { return true }
         if !p.destination.isBroadcast { return true } // direct E2E is never flood-gated
         let limiter: RateLimiter
         if let existing = inboundRate[p.source.hex] {

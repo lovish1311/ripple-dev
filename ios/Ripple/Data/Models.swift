@@ -3,6 +3,12 @@ import SwiftData
 
 enum MessageStatus: String, Codable { case pending, sent, delivered, received, failed }
 
+enum SosStatus: String, Codable, CaseIterable {
+    case active
+    case acknowledged
+    case resolved
+}
+
 /// One chat message. `conversation` is "broadcast" for the public channel, or the
 /// hex NodeId of the other party for a direct conversation.
 @Model
@@ -16,15 +22,24 @@ final class MessageRecord {
     var outgoing: Bool
     var statusRaw: String
     var verified: Bool
+    var voiceBytes: Data?
+    var voiceDurationMs: Int?
 
     var status: MessageStatus {
         get { MessageStatus(rawValue: statusRaw) ?? .received }
         set { statusRaw = newValue.rawValue }
     }
 
-    init(messageId: String, conversation: String, fromNodeId: String, fromName: String?, text: String, timestamp: Date, outgoing: Bool, status: MessageStatus, verified: Bool) {
+    var isVoice: Bool {
+        voiceBytes != nil && !(voiceBytes?.isEmpty ?? true)
+    }
+
+    init(messageId: String, conversation: String, fromNodeId: String, fromName: String?, text: String,
+         timestamp: Date, outgoing: Bool, status: MessageStatus, verified: Bool,
+         voiceBytes: Data? = nil, voiceDurationMs: Int? = nil) {
         self.messageId = messageId; self.conversation = conversation; self.fromNodeId = fromNodeId; self.fromName = fromName
         self.text = text; self.timestamp = timestamp; self.outgoing = outgoing; self.statusRaw = status.rawValue; self.verified = verified
+        self.voiceBytes = voiceBytes; self.voiceDurationMs = voiceDurationMs
     }
 }
 
@@ -65,11 +80,25 @@ final class SosRecord {
     var accuracyMeters: Int?
     var verified: Bool
     var timestamp: Date
+    var statusRaw: String = "active"
+    var voiceBytes: Data?
+    var voiceDurationMs: Int?
 
-    init(messageId: String, fromNodeId: String, fromName: String?, text: String, latE7: Int32?, lngE7: Int32?, accuracyMeters: Int?, verified: Bool, timestamp: Date) {
+    var status: SosStatus {
+        get { SosStatus(rawValue: statusRaw) ?? .active }
+        set { statusRaw = newValue.rawValue }
+    }
+
+    var hasLocation: Bool { latE7 != nil && lngE7 != nil }
+    var hasVoice: Bool { voiceBytes != nil && !(voiceBytes?.isEmpty ?? true) }
+
+    init(messageId: String, fromNodeId: String, fromName: String?, text: String,
+         latE7: Int32?, lngE7: Int32?, accuracyMeters: Int?, verified: Bool, timestamp: Date,
+         status: SosStatus = .active, voiceBytes: Data? = nil, voiceDurationMs: Int? = nil) {
         self.messageId = messageId; self.fromNodeId = fromNodeId; self.fromName = fromName
         self.text = text; self.latE7 = latE7; self.lngE7 = lngE7; self.accuracyMeters = accuracyMeters
         self.verified = verified; self.timestamp = timestamp
+        self.statusRaw = status.rawValue; self.voiceBytes = voiceBytes; self.voiceDurationMs = voiceDurationMs
     }
 }
 
